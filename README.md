@@ -104,5 +104,7 @@ Detalle en `docs/`:
 - [03 Frontend (Angular)](docs/03-frontend.md)
 - [04 Modelo de datos y API](docs/04-modelo-datos-api.md)
 - [05 Seguridad y pruebas](docs/05-seguridad-y-pruebas.md)
+- [06 Skills para ejecutar el plan](docs/06-skills-de-ejecucion.md)
+- [07 Restricciones del AWS Academy Learner Lab](docs/07-learner-lab.md)
 
 Nota: el backend se implementa como Lambdas Java planas con SnapStart (sin Spring Boot) para evitar cold starts altos.
