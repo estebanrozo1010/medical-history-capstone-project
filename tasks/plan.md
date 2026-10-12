@@ -159,10 +159,10 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 #### Tarea 8: Subir y listar archivos (backend + UI)
 **Descripción:** `mh-files`: `POST /files/upload-url` (carpeta fija, tipo, tamaño, URL firmada con `Content-Type` y `Content-Length`) y `GET /files`. UI: lista de carpetas, listado por carpeta y subida simple con progreso.
 **Criterios de aceptación:**
-- [ ] Subir un PDF deja un registro `PENDING` con clave `{userSub}/{fileId}`
-- [ ] Carpeta, tipo o tamaño inválido responde 400
-- [ ] `PENDING` de más de 1 hora se muestra como `UPLOAD_EXPIRED`
-- [ ] La UI muestra progreso y el estado
+- [x] Subir un PDF deja un registro `PENDING` con clave `{userSub}/{fileId}` (curl y UI, 2026-10-12; el `userSub` del body se ignora)
+- [x] Carpeta, tipo o tamaño inválido responde 400 (curl; también body no JSON y `?carpeta=` inválida)
+- [x] `PENDING` de más de 1 hora se muestra como `UPLOAD_EXPIRED` (tests en el borde 3600/3601 s; contra la API real el 2026-10-12: `prueba-8a.pdf`, con su `createdAt` adelantado 2 h en DynamoDB para no esperar la hora, `GET /files` lo devuelve `UPLOAD_EXPIRED` y el registro sigue `PENDING`)
+- [x] La UI muestra progreso y el estado (barra de progreso y "Pendiente" en la carpeta; flujo manual con `ng serve`)
 **Verificación:** tests de `SolicitarSubida` y `ListarArchivos`; subida real con un PDF de prueba; `ng test --watch=false`.
 **Dependencias:** Tarea 6 (UI también 7)
 **Archivos probables:** `backend/application/files/*`, `backend/adapter-out-s3/*`, `infra/api.yaml`, `frontend/src/app/features/folders/*`, `features/upload/*`
