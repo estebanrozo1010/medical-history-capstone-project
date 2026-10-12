@@ -17,7 +17,7 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
   - [x] 6a: stack `mh-api` (SAM, stage `v1`, authorizer Cognito, CORS, access logs, throttling 10/20) y `mh-profile` vacía con SnapStart; sin token 401, con token llega a la Lambda. Rutas sin prefijo `/api` (docs/04)
   - [x] 6b: POST 201 / segundo POST 409 / GET descifrado / PUT 200 / 400 por validación, probados con curl; cédula y fecha cifradas en DynamoDB con el `sub` como encryption context; cold start ~1,5 s con priming (plan.md); `apiUrl` en `config.json`
   - [x] Aislamiento real con un segundo usuario: B recibe 404 en GET y PUT sin perfil propio, su POST con el `sub` de A en el body crea su propio perfil, y el de A no cambia
-- [ ] Tarea 7: Pantalla de perfil (S)
+- [x] Tarea 7: Pantalla de perfil (S) — un solo componente en `/perfil`: GET 404 → formulario de primer registro (POST); con perfil → editar (PUT). Probado contra la API real con un usuario nuevo y uno existente; los datos persisten al recargar
 
 ### Checkpoint 2: Primera ruta completa
 - [ ] Registro → login → perfil de punta a punta, aislamiento entre usuarios, `mvn verify` y `ng test`, revisión humana

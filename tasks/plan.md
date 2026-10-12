@@ -141,8 +141,8 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 #### Tarea 7: Pantalla de perfil
 **Descripción:** Formulario de perfil tras el primer login (`POST /profile`) y pantalla `/perfil` (`GET`/`PUT`).
 **Criterios de aceptación:**
-- [ ] Usuario nuevo es llevado al formulario de perfil si `GET /profile` da 404
-- [ ] Datos guardados se ven al recargar
+- [x] Usuario nuevo es llevado al formulario de perfil si `GET /profile` da 404
+- [x] Datos guardados se ven al recargar
 **Verificación:** `ng test --watch=false`; flujo manual registro → login → perfil.
 **Dependencias:** Tareas 5, 6
 **Archivos probables:** `frontend/src/app/features/profile/*`, `core/api/profile.api.ts`

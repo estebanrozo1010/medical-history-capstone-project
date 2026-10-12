@@ -5,8 +5,8 @@ body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, san
 main { max-width: 26rem; margin: 2rem auto; padding: 0 1rem; }
 .campo { margin-bottom: 1rem; }
 label { display: block; font-weight: 600; margin-bottom: .25rem; }
-input { width: 100%; padding: .6rem; border: 1px solid var(--borde); border-radius: .25rem; font: inherit; }
-input[aria-invalid="true"] { border-color: var(--error); }
+input, select { width: 100%; padding: .6rem; border: 1px solid var(--borde); border-radius: .25rem; font: inherit; }
+input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--error); }
 :focus-visible { outline: 3px solid #ffb703; outline-offset: 2px; }
 button { padding: .6rem 1rem; margin-right: .5rem; border: 0; border-radius: .25rem; background: var(--primario); color: #fff; font: inherit; cursor: pointer; }
 button.secundario { background: transparent; color: var(--primario); border: 1px solid var(--primario); }
