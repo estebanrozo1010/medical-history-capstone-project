@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: mh-auth - User Pool de Cognito y App Client publico para Angular (docs/01)
+Resources:
+  Pool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: mh-users
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      # Solo email; el resto del perfil va en DynamoDB
+      Schema:
+        - {Name: email, AttributeDataType: String, Required: true, Mutable: true}
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      MfaConfiguration: OPTIONAL
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+      AccountRecoverySetting:
+        RecoveryMechanisms: [{Name: verified_email, Priority: 1}]
+  Client:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: mh-web
+      UserPoolId: !Ref Pool
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_SRP_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 30
+      TokenValidityUnits: {AccessToken: hours, IdToken: hours, RefreshToken: days}
+Outputs:
+  UserPoolId: {Value: !Ref Pool, Export: {Name: mh-auth-UserPoolId}}
+  UserPoolClientId: {Value: !Ref Client, Export: {Name: mh-auth-UserPoolClientId}}
+  UserPoolArn: {Value: !GetAtt Pool.Arn, Export: {Name: mh-auth-UserPoolArn}}
