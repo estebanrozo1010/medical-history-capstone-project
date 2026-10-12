@@ -16,5 +16,14 @@
       <artifactId>application</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- Solo se usa el presigner, que firma en local: sin clientes HTTP -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3</artifactId>
+      <exclusions>
+        <exclusion><groupId>software.amazon.awssdk</groupId><artifactId>apache-client</artifactId></exclusion>
+        <exclusion><groupId>software.amazon.awssdk</groupId><artifactId>netty-nio-client</artifactId></exclusion>
+      </exclusions>
+    </dependency>
   </dependencies>
 </project>

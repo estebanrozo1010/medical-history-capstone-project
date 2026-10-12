@@ -24,6 +24,8 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 
 ## Fase 2: Archivos
 - [ ] Tarea 8: Subir y listar archivos (L; dividir en 8a backend y 8b UI)
+  - [x] 8a: `mh-files` en `mh-api` (`POST /files/upload-url` y `GET /files[?carpeta=]`). Probado con curl: 201 con registro `PENDING` y clave `{sub del token}/{fileId}` (el `userSub` del body se ignora); PUT con los headers devueltos 200 y con otro tamaño 403 (`Content-Length` firmado); objeto con `aws:kms`; filtro por carpeta (LSI); carpeta, tipo, tamaño y body inválidos → 400. `UPLOAD_EXPIRED` cubierto por tests (calculado al leer). El CORS del bucket ya permitía PUT desde `localhost:4200`
+  - [ ] 8b: UI de carpetas, listado y subida con progreso
 - [ ] Tarea 9: Validación de archivos subidos (`mh-postscan`) y CloudTrail (M)
 - [ ] Tarea 10: Descargar y eliminar archivos (M)
 - [ ] Tarea 11: Subida multipart (M)

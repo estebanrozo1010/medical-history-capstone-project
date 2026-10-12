@@ -86,6 +86,33 @@ Resources:
         Crear: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /profile, Method: post}}
         Obtener: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /profile, Method: get}}
         Actualizar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /profile, Method: put}}
+
+  FilesLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/mh-files
+      RetentionInDays: 30
+  FilesFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: FilesLogs
+    Properties:
+      FunctionName: mh-files
+      Role: !Ref LabRoleArn
+      Runtime: java21
+      Handler: com.mh.historial.adapter.in.lambda.FilesHandler::handleRequest
+      CodeUri: ../backend/adapter-in-lambda/target/mh-lambda.jar
+      MemorySize: 1024
+      Timeout: 15
+      SnapStart: {ApplyOn: PublishedVersions}
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          FILES_TABLE: mh-files
+          DOCS_BUCKET: !ImportValue mh-base-DocsBucketName
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Events:
+        Listar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files, Method: get}}
+        PedirSubida: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files/upload-url, Method: post}}
 Outputs:
   ApiUrl:
     Description: Base de la API (apiUrl del frontend); las rutas cuelgan de aqui sin /api
