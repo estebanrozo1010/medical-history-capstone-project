@@ -1,0 +1,167 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: mh-base - KMS, buckets de documentos y respaldo, tablas DynamoDB (docs/01)
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+  LabRoleArn:
+    Type: String
+    Description: Rol de replicacion de S3 (LabRole en el Learner Lab)
+Conditions:
+  IsDev: !Equals [!Ref Env, dev]
+Resources:
+  Key:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: mh-key - cifrado de S3, DynamoDB y datos sensibles del perfil
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          # Delega en IAM: cada rol recibe sus permisos kms:* en su propia politica
+          - Sid: DelegarEnIAM
+            Effect: Allow
+            Principal: {AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'}
+            Action: 'kms:*'
+            Resource: '*'
+  KeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/mh-key
+      TargetKeyId: !Ref Key
+
+  Docs:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'mh-docs-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault: {SSEAlgorithm: 'aws:kms', KMSMasterKeyID: !GetAtt Key.Arn}
+      VersioningConfiguration: {Status: Enabled}
+      PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT, GET, HEAD]
+            AllowedHeaders: ['*']
+            ExposedHeaders: [ETag]
+            AllowedOrigins: !If
+              - IsDev
+              - ['http://localhost:4200', !Sub 'http://mh-front-${AWS::AccountId}.s3-website-${AWS::Region}.amazonaws.com']
+              - [!Sub 'http://mh-front-${AWS::AccountId}.s3-website-${AWS::Region}.amazonaws.com']
+      LifecycleConfiguration:
+        Rules:
+          - Id: limpieza
+            Status: Enabled
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 7}
+            NoncurrentVersionExpiration: {NoncurrentDays: 30}
+      ReplicationConfiguration:
+        Role: !Ref LabRoleArn
+        Rules:
+          - Id: respaldo
+            Status: Enabled
+            Priority: 1
+            DeleteMarkerReplication: {Status: Disabled}
+            Filter: {Prefix: ''}
+            SourceSelectionCriteria: {SseKmsEncryptedObjects: {Status: Enabled}}
+            Destination:
+              Bucket: !GetAtt Backup.Arn
+              StorageClass: GLACIER
+              EncryptionConfiguration: {ReplicaKmsKeyID: !GetAtt Key.Arn}
+  DocsTlsPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Docs
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SoloTLS
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: [!GetAtt Docs.Arn, !Sub '${Docs.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': 'false'}}
+
+  Backup:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'mh-docs-backup-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault: {SSEAlgorithm: 'aws:kms', KMSMasterKeyID: !GetAtt Key.Arn}
+      VersioningConfiguration: {Status: Enabled}
+      PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+  BackupTlsPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Backup
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SoloTLS
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: [!GetAtt Backup.Arn, !Sub '${Backup.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': 'false'}}
+
+  Profiles:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: mh-profiles
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: sub, AttributeType: S}]
+      KeySchema: [{AttributeName: sub, KeyType: HASH}]
+      SSESpecification: {SSEEnabled: true, SSEType: KMS, KMSMasterKeyId: !GetAtt Key.Arn}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+  Files:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: mh-files
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: userSub, AttributeType: S}
+        - {AttributeName: fileId, AttributeType: S}
+        - {AttributeName: carpeta, AttributeType: S}
+      KeySchema:
+        - {AttributeName: userSub, KeyType: HASH}
+        - {AttributeName: fileId, KeyType: RANGE}
+      # El LSI solo se puede definir al crear la tabla
+      LocalSecondaryIndexes:
+        - IndexName: byCarpeta
+          KeySchema:
+            - {AttributeName: userSub, KeyType: HASH}
+            - {AttributeName: carpeta, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+      SSESpecification: {SSEEnabled: true, SSEType: KMS, KMSMasterKeyId: !GetAtt Key.Arn}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+  Links:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: mh-links
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: token, AttributeType: S}
+        - {AttributeName: userSub, AttributeType: S}
+        - {AttributeName: createdAt, AttributeType: N}
+      KeySchema: [{AttributeName: token, KeyType: HASH}]
+      GlobalSecondaryIndexes:
+        - IndexName: byUser
+          KeySchema:
+            - {AttributeName: userSub, KeyType: HASH}
+            - {AttributeName: createdAt, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+      TimeToLiveSpecification: {AttributeName: expiresAt, Enabled: true}
+      SSESpecification: {SSEEnabled: true, SSEType: KMS, KMSMasterKeyId: !GetAtt Key.Arn}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+Outputs:
+  KeyArn: {Value: !GetAtt Key.Arn, Export: {Name: mh-base-KeyArn}}
+  DocsBucketName: {Value: !Ref Docs, Export: {Name: mh-base-DocsBucketName}}
+  DocsBucketArn: {Value: !GetAtt Docs.Arn, Export: {Name: mh-base-DocsBucketArn}}
+  BackupBucketName: {Value: !Ref Backup, Export: {Name: mh-base-BackupBucketName}}
+  BackupBucketArn: {Value: !GetAtt Backup.Arn, Export: {Name: mh-base-BackupBucketArn}}
+  ProfilesTableArn: {Value: !GetAtt Profiles.Arn, Export: {Name: mh-base-ProfilesTableArn}}
+  FilesTableArn: {Value: !GetAtt Files.Arn, Export: {Name: mh-base-FilesTableArn}}
+  LinksTableArn: {Value: !GetAtt Links.Arn, Export: {Name: mh-base-LinksTableArn}}
