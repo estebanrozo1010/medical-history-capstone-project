@@ -49,6 +49,7 @@ Reglas: `domain` y `application` no dependen del SDK de AWS; los adapters implem
 
 ## SnapStart
 - `Runtime: java21`, `SnapStart: ApplyOn: PublishedVersions`, invocar siempre el alias `live`.
+- Priming: el constructor del handler (que corre en el init, antes del snapshot) hace una llamada inocua a cada servicio (p. ej. `GET` de un `sub` inexistente, KMS `Encrypt` de un texto fijo). En `mh-profile` bajó la primera ejecución tras el restore de 2,8 s a 0,8 s (medición en `tasks/plan.md`, Tarea 6).
 - No guardar en estáticos nada que deba ser único por invocación (tokens, reloj). Regenerar credenciales/aleatoriedad tras restore si se cachea algo (hook `CRaC` solo si hace falta).
 
 ## Errores y logs

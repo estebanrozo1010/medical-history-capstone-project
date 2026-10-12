@@ -128,6 +128,16 @@ Se construye de abajo hacia arriba; cada tarea de la columna central entrega una
 **Archivos probables:** `infra/api.yaml`, `backend/domain/*`, `backend/application/*`, `backend/adapter-in-lambda/*`, `backend/adapter-out-dynamodb/*`, `backend/adapter-out-kms/*`
 **Alcance:** L (dividir en dos al implementar: 6a stack + handler vacío desplegado con SnapStart, 6b lógica de perfil)
 
+**Cold start medido (2026-10-12, `mh-profile`, 1024 MB, jar de 10 MB, una muestra por variante, primer `GET /profile` tras publicar la versión):**
+
+| Variante | Restore | Primera ejecución | Total en Lambda | `curl` de punta a punta |
+|---|---|---|---|---|
+| SnapStart sin priming | 957 ms | 2 778 ms | ~3,7 s | 4,3 s |
+| SnapStart + priming en el init (KMS `Encrypt` y un `GET` de un `sub` inexistente) | 744 ms | 761 ms | ~1,5 s | 2,0 s |
+| Peticiones en caliente | — | 50–120 ms | — | 0,2–0,4 s |
+
+El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapshot) y se repite en cada Lambda nueva. Queda en el límite del objetivo de 1,5 s de [docs/02](../docs/02-backend.md); si hiciera falta bajar más: priming de `Decrypt` o más memoria.
+
 #### Tarea 7: Pantalla de perfil
 **Descripción:** Formulario de perfil tras el primer login (`POST /profile`) y pantalla `/perfil` (`GET`/`PUT`).
 **Criterios de aceptación:**

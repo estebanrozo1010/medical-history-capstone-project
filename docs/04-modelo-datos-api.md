@@ -65,7 +65,7 @@ Las rutas de abajo son relativas a la base. Todos requieren `Authorization: Bear
 | `GET /profile` | — | `200 {email, nombre, cedula, fechaNacimiento, genero}` · `404` |
 | `PUT /profile` | igual que POST | `200` perfil · `404` si no existe |
 
-Validación (`400 VALIDACION`): `nombre` 1–100 caracteres; `cedula` de 5 a 15 dígitos; `fechaNacimiento` `AAAA-MM-DD`, desde 1900-01-01 y no futura; `genero` `M`/`F`/`O`. Campos extra del body (incluido `sub` o `email`) se ignoran. Códigos de error: `VALIDACION` (400), `NO_ENCONTRADO` (404), `PERFIL_EXISTE` (409), `ERROR_INTERNO` (500).
+Validación (`400 VALIDACION`): `nombre` 1–100 caracteres; `cedula` de 5 a 15 dígitos; `fechaNacimiento` `AAAA-MM-DD`, desde 1900-01-01 y no futura; `genero` `M`/`F`/`O`. Campos extra del body (incluido `sub` o `email`) se ignoran. Códigos de error: `VALIDACION` (400), `NO_ENCONTRADO` (404), `CONFLICTO` (409), `ERROR_INTERNO` (500).
 
 ### Archivos (`mh-files`)
 | Método y ruta | Body / query | Respuesta |
