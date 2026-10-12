@@ -12,7 +12,7 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 - [x] Stacks `mh-base` y `mh-auth` desplegados, spike resuelto, revisión humana (visto bueno del usuario el 2026-10-12)
 
 ## Fase 1: Registro y perfil
-- [ ] Tarea 5: Frontend base con autenticación (M)
+- [x] Tarea 5: Frontend base con autenticación (M)
 - [ ] Tarea 6: `mh-api` y `mh-profile` (L; dividir en 6a y 6b)
 - [ ] Tarea 7: Pantalla de perfil (S)
 

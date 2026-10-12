@@ -18,6 +18,8 @@
           "options": {
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
+            "define": { "global": "globalThis" },
+            "allowedCommonJsDependencies": ["amazon-cognito-identity-js", "buffer", "@aws-crypto/sha256-js", "isomorphic-unfetch"],
             "assets": [
               {
                 "glob": "**/*",
