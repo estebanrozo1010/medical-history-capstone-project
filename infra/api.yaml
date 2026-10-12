@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: mh-api - API Gateway REST (stage v1, authorizer Cognito) y Lambdas Java 21 con SnapStart (docs/01, docs/07)
+Parameters:
+  LabRoleArn:
+    Type: String
+    Description: Rol de las Lambdas y de los logs de API Gateway (LabRole en el Learner Lab)
+  AllowedOrigin:
+    Type: String
+    Default: 'http://localhost:4200'
+    # shortcut: un solo origen CORS; en la Tarea 16 pasa a ser la URL del sitio de S3
+    Description: Origen del frontend permitido por CORS
+Resources:
+  # Access logs del stage: API Gateway necesita un rol de CloudWatch a nivel de cuenta
+  ApiGatewayAccount:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !Ref LabRoleArn
+  AccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/apigateway/mh-api
+      RetentionInDays: 30
+
+  Api:
+    Type: AWS::Serverless::Api
+    DependsOn: ApiGatewayAccount
+    Properties:
+      Name: mh-api
+      StageName: v1
+      # Sin tokens ni datos personales: solo el sub del JWT
+      AccessLogSetting:
+        DestinationArn: !GetAtt AccessLogs.Arn
+        Format: '{"requestId":"$context.requestId","sub":"$context.authorizer.claims.sub","ip":"$context.identity.sourceIp","method":"$context.httpMethod","path":"$context.resourcePath","status":"$context.status","latencyMs":"$context.responseLatency","integrationLatencyMs":"$context.integrationLatency"}'
+      # Limite global del stage (Lambda admite 10 ejecuciones simultaneas en el lab)
+      MethodSettings:
+        - {ResourcePath: '/*', HttpMethod: '*', ThrottlingRateLimit: 10, ThrottlingBurstLimit: 20}
+      Cors:
+        AllowOrigin: !Sub "'${AllowedOrigin}'"
+        AllowHeaders: "'Authorization,Content-Type'"
+        AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+        MaxAge: "'600'"
+      Auth:
+        DefaultAuthorizer: Cognito
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          Cognito:
+            UserPoolArn: !ImportValue mh-auth-UserPoolArn
+      # Sin esto el navegador ve un 401 del authorizer como error de CORS
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+
+  ProfileLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/mh-profile
+      RetentionInDays: 30
+  ProfileFunction:
+    Type: AWS::Serverless::Function
+    # SnapStart ejecuta el init al publicar la versión y ya escribe logs
+    DependsOn: ProfileLogs
+    Properties:
+      FunctionName: mh-profile
+      Role: !Ref LabRoleArn
+      Runtime: java21
+      Handler: com.mh.historial.adapter.in.lambda.ProfileHandler::handleRequest
+      CodeUri: ../backend/adapter-in-lambda/target/mh-lambda.jar
+      MemorySize: 1024
+      Timeout: 15
+      SnapStart: {ApplyOn: PublishedVersions}
+      # Publica una versión nueva con cada cambio de código; API Gateway invoca el alias
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          PROFILES_TABLE: mh-profiles
+          KMS_KEY_ARN: !ImportValue mh-base-KeyArn
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Events:
+        Crear: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /profile, Method: post}}
+        Obtener: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /profile, Method: get}}
+        Actualizar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /profile, Method: put}}
+Outputs:
+  ApiUrl:
+    Description: Base de la API (apiUrl del frontend); las rutas cuelgan de aqui sin /api
+    Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com/v1'
+    Export: {Name: mh-api-ApiUrl}

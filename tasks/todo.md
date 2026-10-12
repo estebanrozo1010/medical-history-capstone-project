@@ -14,6 +14,8 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 ## Fase 1: Registro y perfil
 - [x] Tarea 5: Frontend base con autenticación (M)
 - [ ] Tarea 6: `mh-api` y `mh-profile` (L; dividir en 6a y 6b)
+  - [x] 6a: stack `mh-api` (SAM, stage `v1`, authorizer Cognito, CORS, access logs, throttling 10/20) y `mh-profile` vacía con SnapStart; sin token 401, con token llega a la Lambda. Rutas sin prefijo `/api` (docs/04)
+  - [ ] 6b: lógica de perfil (POST/GET/PUT, KMS, 409, validación)
 - [ ] Tarea 7: Pantalla de perfil (S)
 
 ### Checkpoint 2: Primera ruta completa

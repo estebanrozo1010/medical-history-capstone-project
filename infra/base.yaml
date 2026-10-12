@@ -107,6 +107,33 @@ Resources:
             Resource: [!GetAtt Backup.Arn, !Sub '${Backup.Arn}/*']
             Condition: {Bool: {'aws:SecureTransport': 'false'}}
 
+  # Jars de las Lambdas (aws cloudformation package en deploy.sh)
+  Artifacts:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'mh-artifacts-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+      # Lambda copia el código al crear la versión; los jars viejos sobran
+      LifecycleConfiguration:
+        Rules:
+          - {Id: limpieza, Status: Enabled, ExpirationInDays: 30}
+  ArtifactsTlsPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Artifacts
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SoloTLS
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: [!GetAtt Artifacts.Arn, !Sub '${Artifacts.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': 'false'}}
+
   Profiles:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -162,6 +189,7 @@ Outputs:
   DocsBucketArn: {Value: !GetAtt Docs.Arn, Export: {Name: mh-base-DocsBucketArn}}
   BackupBucketName: {Value: !Ref Backup, Export: {Name: mh-base-BackupBucketName}}
   BackupBucketArn: {Value: !GetAtt Backup.Arn, Export: {Name: mh-base-BackupBucketArn}}
+  ArtifactsBucketName: {Value: !Ref Artifacts, Export: {Name: mh-base-ArtifactsBucketName}}
   ProfilesTableArn: {Value: !GetAtt Profiles.Arn, Export: {Name: mh-base-ProfilesTableArn}}
   FilesTableArn: {Value: !GetAtt Files.Arn, Export: {Name: mh-base-FilesTableArn}}
   LinksTableArn: {Value: !GetAtt Links.Arn, Export: {Name: mh-base-LinksTableArn}}

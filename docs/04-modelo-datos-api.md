@@ -52,14 +52,20 @@ El total por carpeta se calcula en el cliente con `GET /files`.
 
 ## Endpoints
 
-Base: `https://<dominio>/api` (las rutas de API Gateway empiezan en `/api`; ver [01](01-infra-cloudformation.md)). Todos requieren `Authorization: Bearer <ID token de Cognito>` salvo los marcados *pública*. Error uniforme: `{ "code": "...", "message": "..." }`.
+Base:
+- **Arquitectura objetivo:** `https://<dominio>/api` (CloudFront reenvía `/api/*` a API Gateway; ver [01](01-infra-cloudformation.md)).
+- **PoC en el Learner Lab (lo implementado):** sin CloudFront no hay prefijo `/api`. La base es la URL del stage, `https://<apiId>.execute-api.us-east-1.amazonaws.com/v1`, y las rutas cuelgan de la raíz: `GET {base}/profile`, `GET {base}/s/{token}`, etc. El front la lee de `apiUrl` en `config.json` (Export `mh-api-ApiUrl`). Ver [07](07-learner-lab.md).
+
+Las rutas de abajo son relativas a la base. Todos requieren `Authorization: Bearer <ID token de Cognito>` salvo los marcados *pública*. Error uniforme: `{ "code": "...", "message": "..." }`.
 
 ### Perfil (`mh-profile`)
 | Método y ruta | Body | Respuesta |
 |---|---|---|
 | `POST /profile` | `{nombre, cedula, fechaNacimiento, genero}` | `201` perfil · `409` si ya existe |
 | `GET /profile` | — | `200 {email, nombre, cedula, fechaNacimiento, genero}` · `404` |
-| `PUT /profile` | igual que POST | `200` |
+| `PUT /profile` | igual que POST | `200` perfil · `404` si no existe |
+
+Validación (`400 VALIDACION`): `nombre` 1–100 caracteres; `cedula` de 5 a 15 dígitos; `fechaNacimiento` `AAAA-MM-DD`, desde 1900-01-01 y no futura; `genero` `M`/`F`/`O`. Campos extra del body (incluido `sub` o `email`) se ignoran. Códigos de error: `VALIDACION` (400), `NO_ENCONTRADO` (404), `PERFIL_EXISTE` (409), `ERROR_INTERNO` (500).
 
 ### Archivos (`mh-files`)
 | Método y ruta | Body / query | Respuesta |
