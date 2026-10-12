@@ -1,4 +1,11 @@
 <header class="cabecera">Historial médico</header>
+@if (auth.email()) {
+  <nav class="menu" aria-label="Principal">
+    <a routerLink="/carpetas" routerLinkActive="activo" ariaCurrentWhenActive="page">Carpetas</a>
+    <a routerLink="/subir" routerLinkActive="activo" ariaCurrentWhenActive="page">Subir</a>
+    <a routerLink="/perfil" routerLinkActive="activo" ariaCurrentWhenActive="page">Perfil</a>
+  </nav>
+}
 <main id="contenido">
   <router-outlet />
 </main>

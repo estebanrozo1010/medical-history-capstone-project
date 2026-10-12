@@ -23,9 +23,9 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 - [x] Registro → login → perfil de punta a punta, aislamiento entre usuarios, `mvn verify` y `ng test`, revisión humana (visto bueno del usuario el 2026-10-12)
 
 ## Fase 2: Archivos
-- [ ] Tarea 8: Subir y listar archivos (L; dividir en 8a backend y 8b UI)
+- [x] Tarea 8: Subir y listar archivos (L; dividir en 8a backend y 8b UI)
   - [x] 8a: `mh-files` en `mh-api` (`POST /files/upload-url` y `GET /files[?carpeta=]`). Probado con curl: 201 con registro `PENDING` y clave `{sub del token}/{fileId}` (el `userSub` del body se ignora); PUT con los headers devueltos 200 y con otro tamaño 403 (`Content-Length` firmado); objeto con `aws:kms`; filtro por carpeta (LSI); carpeta, tipo, tamaño y body inválidos → 400. `UPLOAD_EXPIRED` cubierto por tests (calculado al leer). El CORS del bucket ya permitía PUT desde `localhost:4200`
-  - [ ] 8b: UI de carpetas, listado y subida con progreso
+  - [x] 8b: `FilesApi` y lista fija de carpetas en el front; `/carpetas` (totales con un solo `GET /files`), `/carpetas/:nombre` (tamaño, fecha y estado en español) y `/subir` (validación de tipo y tamaño en el cliente, PUT directo a S3 sin `Authorization` con barra de progreso); menú Carpetas · Subir · Perfil con sesión. `ng test` (41) y `ng build` sin warnings. Flujo manual con `ng serve`: login → subir un PDF real (159 KB) → visto como Pendiente en su carpeta; objeto y registro `PENDING` verificados en AWS
 - [ ] Tarea 9: Validación de archivos subidos (`mh-postscan`) y CloudTrail (M)
 - [ ] Tarea 10: Descargar y eliminar archivos (M)
 - [ ] Tarea 11: Subida multipart (M)

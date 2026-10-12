@@ -6,5 +6,8 @@ export const routes: Routes = [
   { path: 'registro', loadComponent: () => import('./features/auth/registro').then((m) => m.Registro) },
   { path: 'confirmar', loadComponent: () => import('./features/auth/confirmar').then((m) => m.Confirmar) },
   { path: 'perfil', canActivate: [authGuard], loadComponent: () => import('./features/perfil').then((m) => m.Perfil) },
+  { path: 'carpetas', canActivate: [authGuard], loadComponent: () => import('./features/folders/carpetas').then((m) => m.Carpetas) },
+  { path: 'carpetas/:nombre', canActivate: [authGuard], loadComponent: () => import('./features/folders/carpeta').then((m) => m.Carpeta) },
+  { path: 'subir', canActivate: [authGuard], loadComponent: () => import('./features/upload/subir').then((m) => m.Subir) },
   { path: '**', redirectTo: 'perfil' },
 ];

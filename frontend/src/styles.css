@@ -15,3 +15,13 @@ a { color: var(--primario); }
 .error { color: var(--error); margin: .25rem 0; }
 .exito { color: var(--exito); }
 .ayuda { color: #4a545e; font-size: .875rem; margin: .25rem 0; }
+.menu { display: flex; gap: 1rem; justify-content: center; padding: .5rem 1rem; border-bottom: 1px solid var(--borde); }
+.menu a { padding: .25rem; text-decoration: none; }
+.menu a.activo { font-weight: 600; text-decoration: underline; }
+.lista { list-style: none; padding: 0; }
+.lista li { display: flex; flex-wrap: wrap; gap: .25rem 1rem; align-items: baseline; padding: .6rem 0; border-bottom: 1px solid #d5dbe1; }
+.lista .nombre { flex: 1 1 100%; font-weight: 600; overflow-wrap: anywhere; }
+.estado { padding: 0 .5rem; border-radius: 1rem; font-size: .875rem; background: #eef1f4; }
+.estado-CLEAN { background: #e6f4ea; color: var(--exito); }
+.estado-INFECTED, .estado-REJECTED, .estado-SCAN_FAILED, .estado-UPLOAD_EXPIRED { background: #fdecee; color: var(--error); }
+progress { width: 100%; height: 1rem; }
