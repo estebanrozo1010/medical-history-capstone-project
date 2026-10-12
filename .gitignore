@@ -1,0 +1,11 @@
+# Java
+target/
+# Angular
+node_modules/
+dist/
+.angular/
+# Secretos / credenciales locales
+aws-credentials
+.aws/
+*.pem
+*.ppk

@@ -3,7 +3,7 @@
 Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 
 ## Fase 0: Cimientos y riesgos
-- [ ] Tarea 1: Estructura del repo y herramientas (M)
+- [x] Tarea 1: Estructura del repo y herramientas (M) — falta solo la alerta de Budgets (requiere un correo)
 - [ ] Tarea 2: Spike de riesgos de AWS (S)
 - [ ] Tarea 3: Stack `mh-base` (M)
 - [ ] Tarea 4: Stack `mh-auth` y primer ID token (S)
