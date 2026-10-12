@@ -152,7 +152,7 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 - [x] Registro → confirmar → login → guardar y ver perfil funciona de punta a punta (2026-10-12, usuario recreado desde cero en la UI)
 - [x] Aislamiento: el usuario B no ve datos del usuario A (API en la Tarea 6; en la UI cada usuario ve solo su perfil)
 - [x] `mvn verify` (31 tests) y `ng test` (25 tests) pasan
-- [ ] Revisión con una persona
+- [x] Revisión con una persona (visto bueno del usuario el 2026-10-12)
 
 ### Fase 2: Archivos
 

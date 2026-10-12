@@ -20,7 +20,7 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 - [x] Tarea 7: Pantalla de perfil (S) — un solo componente en `/perfil`: GET 404 → formulario de primer registro (POST); con perfil → editar (PUT). Probado contra la API real con un usuario nuevo y uno existente; los datos persisten al recargar
 
 ### Checkpoint 2: Primera ruta completa
-- [ ] Registro → login → perfil de punta a punta, aislamiento entre usuarios, `mvn verify` y `ng test`, revisión humana — todo verificado el 2026-10-12; falta la revisión humana
+- [x] Registro → login → perfil de punta a punta, aislamiento entre usuarios, `mvn verify` y `ng test`, revisión humana (visto bueno del usuario el 2026-10-12)
 
 ## Fase 2: Archivos
 - [ ] Tarea 8: Subir y listar archivos (L; dividir en 8a backend y 8b UI)
