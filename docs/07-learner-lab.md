@@ -62,6 +62,28 @@ No estar en la lista no confirma que fallen, pero tampoco que funcionen. Ambos s
 - Buenas prácticas: infraestructura solo con CloudFormation, borrar los stacks al terminar el día, revisar recursos olvidados con *Resource Groups & Tag Editor* (en `us-east-1` y `us-west-2`) y mirar *Trusted Advisor* para ahorro de costos.
 - Algunos recursos existen desde el inicio (IAM, dos Lambdas, grupos de seguridad, VPC) y no consumen presupuesto relevante.
 
+## Arquitectura objetivo vs. PoC en el Learner Lab
+
+Los docs [00](00-plan-general.md) a [05](05-seguridad-y-pruebas.md) y el README describen la **arquitectura objetivo**, la que se explica en la sustentación. La **PoC** que se construye en el laboratorio difiere en lo siguiente (resultados del spike del 2026-10-12 en [tasks/plan.md](../tasks/plan.md)):
+
+| Tema | Arquitectura objetivo | PoC en el Learner Lab | Motivo |
+|---|---|---|---|
+| Región | `eu-south-2` | `us-east-1` | El laboratorio solo permite `us-east-1` y `us-west-2` |
+| Roles IAM | Un rol por Lambda con mínimo privilegio | `LabRole` para todo | No se pueden crear roles |
+| Login | Cognito | Cognito (**sin cambios**, funciona) | — |
+| Entrega del frontend | CloudFront + OAC + HTTPS | Sitio estático de S3 público, solo HTTP | CloudFront está denegado |
+| WAF | CloudFront (global) y API Gateway (regional) | Ninguno (throttling del stage de API Gateway) | Sin CloudFront; el regional no se probó |
+| Dominio | Route 53 + ACM | URL del bucket y de API Gateway | No se pueden registrar dominios |
+| Ruta de la API | `/api/*` en el mismo dominio vía CloudFront | URL directa de API Gateway (`https://...execute-api...`) con CORS | Sin CloudFront |
+| Límite por IP en `/s/*` | Regla `rate-based` del WAF | Throttling por stage | Sin WAF de CloudFront |
+| Escaneo de malware | GuardDuty Malware Protection (`CLEAN` / `INFECTED`) | Validador de tipo (extensión, MIME, primeros bytes): `CLEAN` / `REJECTED` | GuardDuty no es viable con `LabRole` |
+| Comparación de tamaño declarado/real | Verificación en `mh-postscan` | No hace falta: S3 rechaza el tamaño distinto (probado) | `Content-Length` firmado funciona |
+| Réplica a Glacier | S3 Replication | **Igual** (probada con `LabRole`) | — |
+| CloudTrail | A CloudWatch y S3 | Solo a S3 | El laboratorio no permite CloudWatch Logs en el trail |
+| Carga | 200 req/s | Escenarios reducidos | Máx. 10 ejecuciones simultáneas de Lambda |
+
+El escaneo va detrás de un puerto `ArchivoScanner` (hexagonal): el adaptador de la PoC es el validador de tipo y el de la versión objetivo es el de GuardDuty. Pasar de uno a otro no cambia el resto del backend.
+
 ## Impacto en el plan
 
 | Área | Cambio respecto a los docs actuales |

@@ -21,7 +21,7 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 
 ## Fase 2: Archivos
 - [ ] Tarea 8: Subir y listar archivos (L; dividir en 8a backend y 8b UI)
-- [ ] Tarea 9: `mh-security` y `mh-postscan` (M)
+- [ ] Tarea 9: Validación de archivos subidos (`mh-postscan`) y CloudTrail (M)
 - [ ] Tarea 10: Descargar y eliminar archivos (M)
 - [ ] Tarea 11: Subida multipart (M)
 
@@ -38,7 +38,7 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 - [ ] 2 archivos en un link, abrir en ventana privada, apagar → 410, vencido → 410, revisión humana
 
 ## Fase 4: Borde, endurecimiento y entrega
-- [ ] Tarea 16: Stacks de borde (CloudFront, WAF, dominio) (M)
+- [ ] Tarea 16: Publicación del frontend en S3 y borde (M)
 - [ ] Tarea 17: Revisión de seguridad y correcciones (M)
 - [ ] Tarea 18: Pruebas de carga (S)
 - [ ] Tarea 19: Cierre y entrega (S)

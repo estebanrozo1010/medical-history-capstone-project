@@ -78,10 +78,10 @@ Se construye de abajo hacia arriba; cada tarea de la columna central entrega una
 **Alcance:** S
 
 #### Tarea 3: Stack `mh-base`
-**Descripción:** KMS (con key policy que delega en IAM), 3 buckets (docs, backup, front) con cifrado/versionado/lifecycle/CORS, 3 tablas DynamoDB (con LSI y TTL), réplica a Glacier.
+**Descripción:** KMS (con key policy que delega en IAM), 2 buckets (docs y backup; el del frontend va en la Tarea 16) con cifrado/versionado/lifecycle/CORS, 3 tablas DynamoDB (con LSI y TTL), réplica a Glacier con `LabRole` (probada en el spike). Región `us-east-1`; los roles son `LabRole` por parámetro.
 **Criterios de aceptación:**
 - [ ] `cfn-lint infra/base.yaml` sin errores
-- [ ] Ningún bucket es público y todos usan KMS
+- [ ] Los buckets de documentos y respaldo no son públicos y usan KMS
 - [ ] Un objeto subido a `mh-docs` aparece replicado en el bucket de respaldo
 **Verificación:** `aws cloudformation deploy`; `aws s3api get-bucket-encryption`; subir un archivo de prueba y listar el respaldo.
 **Dependencias:** Tarea 1
@@ -158,16 +158,18 @@ Se construye de abajo hacia arriba; cada tarea de la columna central entrega una
 **Archivos probables:** `backend/application/files/*`, `backend/adapter-out-s3/*`, `infra/api.yaml`, `frontend/src/app/features/folders/*`, `features/upload/*`
 **Alcance:** L (dividir en 8a backend y 8b UI)
 
-#### Tarea 9: `mh-security` y `mh-postscan`
-**Descripción:** Stack con GuardDuty Malware Protection, CloudTrail y la regla de EventBridge; Lambda `mh-postscan` que marca `CLEAN`, `INFECTED` o `SCAN_FAILED`, compara tamaño real y borra todas las versiones (docs y respaldo) si hay amenaza.
+#### Tarea 9: Validación de archivos subidos (`mh-postscan`) y CloudTrail
+**Versión PoC (Learner Lab):** GuardDuty no es viable (ver Resultados del spike). El escaneo va detrás de un puerto `ArchivoScanner` en `application`; la PoC usa el adaptador `ValidadorDeTipo` (extensión, tipo MIME declarado y primeros bytes del archivo, p. ej. `%PDF`). **Versión objetivo:** otro adaptador que lee el resultado de GuardDuty ([docs/01](../docs/01-infra-cloudformation.md) y [docs/02](../docs/02-backend.md)); cambiarlo no toca el resto del código.
+**Descripción:** Lambda `mh-postscan` disparada por la notificación de S3 al crearse un objeto: lee los primeros bytes, valida contra el tipo declarado y marca `CLEAN` o `REJECTED`; si se rechaza, borra todas las versiones (docs y respaldo). Stack `mh-security` solo con CloudTrail a S3 (sin GuardDuty).
 **Criterios de aceptación:**
-- [ ] PDF limpio pasa a `CLEAN`
-- [ ] Archivo EICAR pasa a `INFECTED` y no queda ninguna versión en ambos buckets
-- [ ] Tamaño real distinto del declarado → `SCAN_FAILED` y objeto borrado
+- [ ] PDF real pasa a `CLEAN`
+- [ ] Un `.exe` renombrado a `.pdf` pasa a `REJECTED` y no queda ninguna versión en ambos buckets
+- [ ] El estado `INFECTED` queda reservado al adaptador de GuardDuty (versión objetivo)
 - [ ] Reenviar el mismo evento no falla (idempotente)
-**Verificación:** tests de `mh-postscan` con eventos simulados; prueba real con EICAR; `aws s3api list-object-versions` en ambos buckets.
-**Dependencias:** Tareas 2, 8
-**Archivos probables:** `infra/security.yaml`, `infra/api.yaml`, `backend/adapter-in-lambda/PostScanHandler`, `backend/application/postscan/*`
+- [ ] El puerto `ArchivoScanner` tiene dos implementaciones posibles; solo la del validador está activa
+**Verificación:** tests de `mh-postscan` con eventos simulados; prueba real con un PDF y un `.exe` renombrado; `aws s3api list-object-versions` en ambos buckets.
+**Dependencias:** Tarea 8
+**Archivos probables:** `infra/security.yaml`, `infra/api.yaml`, `backend/application/postscan/ArchivoScanner`, `backend/adapter-in-lambda/PostScanHandler`, `backend/application/postscan/ValidadorDeTipo`
 **Alcance:** M
 
 #### Tarea 10: Descargar y eliminar archivos
@@ -249,15 +251,17 @@ Se construye de abajo hacia arriba; cada tarea de la columna central entrega una
 
 ### Fase 4: Borde, endurecimiento y entrega
 
-#### Tarea 16: Stacks de borde (CloudFront, WAF, dominio)
-**Descripción:** `edge-us-east-1.yaml` (ACM y WAF de CloudFront) y `edge.yaml` (CloudFront con OAC, `/api/*` con `OriginPath /v1`, regla `rate-based` en `/api/s/*`, headers de seguridad, Route 53 si hay dominio). Script de despliegue del frontend (S3 sync e invalidación).
+#### Tarea 16: Publicación del frontend y borde
+**Versión PoC (Learner Lab):** CloudFront está bloqueado (ver Resultados del spike). El frontend se sirve como sitio estático de S3 público (HTTP) y llama a API Gateway por su URL HTTPS; no hay prefijo `/api`, ni WAF de CloudFront, ni límite por IP (se usa el throttling del stage). **Versión objetivo:** CloudFront + OAC + WAF + dominio, tal como en [docs/01](../docs/01-infra-cloudformation.md); se explica en la sustentación.
+**Descripción:** Stack `edge.yaml` con el bucket del sitio web estático (política pública de solo lectura), CORS en API Gateway para el origen del sitio, `config.json` con la URL real de la API y script que sube el build (`ng build` + `aws s3 sync`).
 **Criterios de aceptación:**
-- [ ] La app se sirve por CloudFront y las rutas SPA funcionan al recargar
-- [ ] `/api/*` llega a API Gateway; la regla de tasa bloquea ráfagas en `/api/s/*`
-- [ ] `config.json` y `index.html` sin caché, resto con hash e inmutable
-**Verificación:** `cfn-lint infra/edge*.yaml`; abrir el dominio; ráfaga de `curl` contra `/api/s/x`.
+- [ ] La app carga en la URL `http://<bucket>.s3-website-us-east-1.amazonaws.com`
+- [ ] Recargar una ruta de la SPA (p. ej. `/carpetas`) abre la app y no una página de error (verificar `ErrorDocument`; dejó de verificarse en el spike)
+- [ ] El navegador llama a la API sin errores de CORS
+- [ ] Solo el contenido del frontend es público; los buckets de documentos siguen privados
+**Verificación:** `cfn-lint infra/edge.yaml`; abrir la URL y recorrer el flujo; `curl -I` a una ruta SPA.
 **Dependencias:** Tareas 13, 15
-**Archivos probables:** `infra/edge-us-east-1.yaml`, `infra/edge.yaml`, `infra/deploy.sh`
+**Archivos probables:** `infra/edge.yaml`, `infra/deploy.sh`, `frontend/public/config.json`
 **Alcance:** M
 
 #### Tarea 17: Revisión de seguridad y correcciones
@@ -351,7 +355,9 @@ Probado el 2026-10-12 en `us-east-1`, Learner Lab, con templates en [infra/spike
 - **Cognito se mantiene** (ID token confirmado): las Tareas 4 a 7 siguen como están.
 - **WAF regional:** no se probó; solo se probó que CloudFront esté denegado. Queda por verificar si se necesita.
 
-### Decisiones pendientes tras el spike
+### Decisiones tomadas tras el spike
 
-1. Reemplazo del escaneo de malware (Tarea 9).
-2. Cómo se sirve el frontend sin HTTPS de CloudFront (Tarea 16).
+La PoC se construye con las restricciones del laboratorio; la **arquitectura objetivo** sigue descrita en README y `docs/00` a `05` para la sustentación. La tabla de diferencias está en [docs/07](../docs/07-learner-lab.md).
+
+1. **Escaneo de malware (Tarea 9):** opción A. Validador de tipo de archivo (extensión, MIME y primeros bytes) detrás de un puerto `ArchivoScanner`; GuardDuty queda como el adaptador de la versión objetivo.
+2. **Frontend (Tarea 16):** opción A. Sitio estático de S3 público por HTTP; la API sigue en HTTPS.

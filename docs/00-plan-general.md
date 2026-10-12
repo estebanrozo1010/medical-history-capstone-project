@@ -1,5 +1,7 @@
 # 00 — Plan general
 
+> Estos documentos describen la **arquitectura objetivo**. La PoC se construye en el AWS Academy Learner Lab con restricciones (región, `LabRole`, sin CloudFront ni GuardDuty); las diferencias están en [07](07-learner-lab.md) y las tareas en [tasks/plan.md](../tasks/plan.md).
+
 Índice: [01 Infra](01-infra-cloudformation.md) · [02 Backend](02-backend.md) · [03 Frontend](03-frontend.md) · [04 Datos y API](04-modelo-datos-api.md) · [05 Seguridad y pruebas](05-seguridad-y-pruebas.md)
 
 ## Convenciones compartidas (todos los docs las usan)
