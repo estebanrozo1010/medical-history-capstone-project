@@ -3,7 +3,7 @@
 Sistema de historial médico donde el usuario puede registrarse, iniciar sesión, organizar sus documentos en carpetas por especialidad, subir archivos (PDF, imágenes, video) y compartirlos mediante un link temporal con control de expiración.
 
 **Stack:**
-- Backend: Java / Spring Boot, arquitectura hexagonal
+- Backend: Java 21 en Lambdas con SnapStart (sin Spring Boot), arquitectura hexagonal
 - Frontend: Angular
 - Infraestructura: AWS (PoC), región `eu-south-2` (Europe/Spain)
 
@@ -53,7 +53,7 @@ Datos: correo, nombre, cédula/identificación, fecha de nacimiento, género.
 ### 2.3 Links de acceso temporal (expiración + switch manual)
 El link que se comparte **no** es una presigned URL directa (esas no se pueden revocar antes de tiempo). En su lugar:
 - El link apunta a un dominio propio (CloudFront → API Gateway → Lambda de Gestión de Links) con un token.
-- En DynamoDB se guarda: `token`, `activo` (true/false), `expiresAt` (atributo **TTL** nativo de Dynamo), y opcionalmente un código de confirmación.
+- En DynamoDB se guarda: `token`, `activo` (true/false), `expiresAt` (atributo **TTL** nativo de Dynamo), y la lista de archivos (`fileIds`) que el link comparte. El código de confirmación opcional queda fuera de la PoC.
 - En cada acceso, la Lambda valida: ¿activo? ¿no expiró? Si todo pasa, genera una presigned URL de muy corta duración (1–5 min) solo para esa consulta y redirige.
 - El **switch manual** (apagar el link desde la app) actualiza `activo=false` → corte inmediato.
 - El **TTL** cubre la expiración automática (ej. 1–2 horas) aunque el usuario no toque el switch.
@@ -94,9 +94,15 @@ medical-history-capstone-project/
 └── README.md
 ```
 
-## 4. Pendientes / próximos pasos
+## 4. Plan de desarrollo
 
-- Definir el modelo de datos exacto de DynamoDB (tablas, claves, índices).
-- Definir plantillas de infraestructura como código (CloudFormation/Terraform) para desplegar lo anterior.
-- Documentar los endpoints de la API (Registro, Login, Archivos, Links).
-- Pruebas de carga sobre la generación de presigned URLs y el flujo de validación de links.
+Detalle en `docs/`:
+
+- [00 Plan general](docs/00-plan-general.md) — fases, requisitos, modelo de Claude por tarea
+- [01 Infraestructura CloudFormation](docs/01-infra-cloudformation.md)
+- [02 Backend (Java, Lambdas + SnapStart)](docs/02-backend.md)
+- [03 Frontend (Angular)](docs/03-frontend.md)
+- [04 Modelo de datos y API](docs/04-modelo-datos-api.md)
+- [05 Seguridad y pruebas](docs/05-seguridad-y-pruebas.md)
+
+Nota: el backend se implementa como Lambdas Java planas con SnapStart (sin Spring Boot) para evitar cold starts altos.
