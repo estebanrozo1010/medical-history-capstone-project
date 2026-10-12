@@ -332,4 +332,26 @@ Tomadas del texto de instrucciones del laboratorio (actualizado 24/06/2025). Los
 
 ## Resultados del spike (Tarea 2)
 
-Pendiente.
+Probado el 2026-10-12 en `us-east-1`, Learner Lab, con templates en [infra/spike/](../infra/spike/). Todos los stacks `mh-spike-*` y sus buckets fueron borrados al terminar.
+
+| # | Prueba | Resultado | Detalle |
+|---|---|---|---|
+| a | Cognito | **Funciona** | User Pool y App Client se crean. Con un usuario de prueba se obtuvo un ID token que trae `email`, `sub` y `token_use=id`. |
+| b | CloudFront | **Bloqueado** | Se deniegan `cloudfront:CreateDistribution`, `CreateOriginAccessControl` y `CreateCloudFrontOriginAccessIdentity`. No hay forma de usar CloudFront. |
+| b2 | Sitio estático de S3 público | **Funciona (solo HTTP)** | El bucket con política pública se crea y responde. La URL del sitio es `http://`, no `https://`. La regla de SPA (`ErrorDocument` a `index.html`) no se verificó: el `index.html` de prueba no llegó a subirse. |
+| c | GuardDuty Malware Protection | **No viable** | El recurso existe, pero con `LabRole` responde que no tiene permisos para validar el bucket; y crear un rol propio falla porque `iam:CreateRole` está denegado. |
+| d | Lambda Java 21 + SnapStart + API Gateway + authorizer Cognito | **Funciona** | Sin token: 401. Con ID token: 200. Todo con `LabRole`. No se midió el cold start. |
+| e | `Content-Length` firmado en el PUT de S3 | **Funciona** | Declarado 1000, subir 1000: 200. Subir 5000: 403 `SignatureDoesNotMatch`. La comparación de tamaño en `mh-postscan` ya no hace falta. |
+| f | Replicación S3 con `LabRole` | **Funciona** | El objeto aparece en el bucket de respaldo con clase `GLACIER` y `ReplicationStatus=COMPLETED` en menos de 1 minuto. El filtro por etiqueta no se probó. |
+
+### Consecuencias para el diseño
+
+- **Sin CloudFront ni WAF de CloudFront:** el frontend se sirve desde S3 como sitio estático (HTTP) y llama a API Gateway por su URL `https://...execute-api...`. Desaparecen el prefijo `/api`, el `OriginPath` y la regla `rate-based` por IP. La Tarea 16 se reescribe.
+- **Sin escaneo automático de malware:** no hay GuardDuty. Hay que elegir un reemplazo (ver decisiones abajo). Cambian la Tarea 9, el estado `PENDING → CLEAN` de [docs/04](../docs/04-modelo-datos-api.md) y las reglas de [docs/02](../docs/02-backend.md).
+- **Cognito se mantiene** (ID token confirmado): las Tareas 4 a 7 siguen como están.
+- **WAF regional:** no se probó; solo se probó que CloudFront esté denegado. Queda por verificar si se necesita.
+
+### Decisiones pendientes tras el spike
+
+1. Reemplazo del escaneo de malware (Tarea 9).
+2. Cómo se sirve el frontend sin HTTPS de CloudFront (Tarea 16).

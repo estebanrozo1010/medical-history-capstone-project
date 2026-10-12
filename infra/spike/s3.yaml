@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Spike (e) Content-Length firmado y (f) replicacion S3 con LabRole
+Parameters:
+  LabRoleArn: {Type: String}
+Resources:
+  Docs:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration: {Status: Enabled}
+      PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+      ReplicationConfiguration:
+        Role: !Ref LabRoleArn
+        Rules:
+          - Id: backup
+            Status: Enabled
+            Priority: 1
+            DeleteMarkerReplication: {Status: Disabled}
+            Filter: {Prefix: ''}
+            Destination:
+              Bucket: !GetAtt Backup.Arn
+              StorageClass: GLACIER
+  Backup:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration: {Status: Enabled}
+      PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+Outputs:
+  DocsBucket: {Value: !Ref Docs}
+  BackupBucket: {Value: !Ref Backup}

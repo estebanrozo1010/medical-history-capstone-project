@@ -1,0 +1,21 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Spike (b4) - sitio estatico de S3 publico como alternativa a CloudFront
+Resources:
+  Site:
+    Type: AWS::S3::Bucket
+    Properties:
+      WebsiteConfiguration: {IndexDocument: index.html, ErrorDocument: index.html}
+      PublicAccessBlockConfiguration: {BlockPublicAcls: false, BlockPublicPolicy: false, IgnorePublicAcls: false, RestrictPublicBuckets: false}
+  Policy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Site
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub '${Site.Arn}/*'
+Outputs:
+  Bucket: {Value: !Ref Site}
+  Url: {Value: !GetAtt Site.WebsiteURL}

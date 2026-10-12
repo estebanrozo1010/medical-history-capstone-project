@@ -1,0 +1,19 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Spike (a) - Cognito User Pool disponible en el Learner Lab
+Resources:
+  Pool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: mh-spike-pool
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+  Client:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref Pool
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_SRP_AUTH, ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+Outputs:
+  UserPoolId: {Value: !Ref Pool}
+  UserPoolArn: {Value: !GetAtt Pool.Arn}
+  ClientId: {Value: !Ref Client}

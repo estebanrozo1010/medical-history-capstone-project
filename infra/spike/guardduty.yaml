@@ -1,0 +1,23 @@
+# LIMITACION (Learner Lab, probado el 2026-10-12 en us-east-1): NO DESPLEGABLE.
+# GuardDuty responde "provided IAM role does not have the required permissions to validate S3 bucket ownership":
+# LabRole no trae los permisos que exige Malware Protection for S3 y el laboratorio no deja modificarlo.
+# Ver guardduty-role.yaml (rol propio) y tasks/plan.md, seccion Resultados del spike.
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Spike (c) - GuardDuty Malware Protection for S3 con LabRole
+Parameters:
+  LabRoleArn: {Type: String}
+Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+  Plan:
+    Type: AWS::GuardDuty::MalwareProtectionPlan
+    Properties:
+      Role: !Ref LabRoleArn
+      ProtectedResource:
+        S3Bucket: {BucketName: !Ref Bucket}
+      Actions:
+        Tagging: {Status: ENABLED}
+Outputs:
+  BucketName: {Value: !Ref Bucket}

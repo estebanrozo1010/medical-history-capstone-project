@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Spike (d) - Lambda Java 21 con SnapStart + API Gateway con authorizer Cognito, usando LabRole
+Parameters:
+  LabRoleArn: {Type: String}
+  UserPoolArn: {Type: String}
+  CodeBucket: {Type: String}
+  CodeKey: {Type: String}
+Resources:
+  Fn:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: java21
+      Handler: spike.Hello::handle
+      MemorySize: 512
+      Timeout: 10
+      Role: !Ref LabRoleArn
+      Code: {S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey}
+      SnapStart: {ApplyOn: PublishedVersions}
+  Ver:
+    Type: AWS::Lambda::Version
+    Properties: {FunctionName: !Ref Fn}
+  Alias:
+    Type: AWS::Lambda::Alias
+    Properties: {FunctionName: !Ref Fn, FunctionVersion: !GetAtt Ver.Version, Name: live}
+  Perm:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Alias
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${Api}/*'
+  Api:
+    Type: AWS::ApiGateway::RestApi
+    Properties: {Name: mh-spike-api}
+  Auth:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      RestApiId: !Ref Api
+      Name: cognito
+      Type: COGNITO_USER_POOLS
+      IdentitySource: method.request.header.Authorization
+      ProviderARNs: [!Ref UserPoolArn]
+  Res:
+    Type: AWS::ApiGateway::Resource
+    Properties: {RestApiId: !Ref Api, ParentId: !GetAtt Api.RootResourceId, PathPart: hello}
+  Get:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref Res
+      HttpMethod: GET
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref Auth
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Alias}/invocations'
+  Deploy:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: Get
+    Properties: {RestApiId: !Ref Api}
+  Stage:
+    Type: AWS::ApiGateway::Stage
+    Properties: {RestApiId: !Ref Api, DeploymentId: !Ref Deploy, StageName: v1}
+Outputs:
+  Url: {Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com/v1/hello'}

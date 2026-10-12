@@ -1,0 +1,21 @@
+# LIMITACION (Learner Lab, probado el 2026-10-12 en us-east-1): NO DESPLEGABLE.
+# CloudFront esta bloqueado: se deniegan cloudfront:CreateDistribution, CreateOriginAccessControl y
+# CreateCloudFrontOriginAccessIdentity ("no identity-based policy allows ..."). Ver tasks/plan.md, Resultados del spike.
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Spike (b3) - distribucion CloudFront minima con origen personalizado (sin OAC ni OAI)
+Resources:
+  Dist:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Origins:
+          - Id: o
+            DomainName: example.com
+            CustomOriginConfig: {OriginProtocolPolicy: https-only}
+        DefaultCacheBehavior:
+          TargetOriginId: o
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+Outputs:
+  Domain: {Value: !GetAtt Dist.DomainName}
