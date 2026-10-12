@@ -3,7 +3,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { Archivo, CARPETAS, FilesApi } from '../../core/api/files.api';
 
-const ESTADOS: Record<Archivo['status'], string> = {
+export const ESTADOS: Record<Archivo['status'], string> = {
   PENDING: 'Pendiente',
   CLEAN: 'Limpio',
   INFECTED: 'Infectado',

@@ -26,6 +26,9 @@ Los stacks se comunican por `Outputs` + `Export` (`mh-base-DocsBucketArn`, etc.)
 - Outputs: `UserPoolId`, `UserPoolClientId`, `UserPoolArn`.
 
 ### `mh-security` (`infra/security.yaml`)
+**PoC en el Learner Lab (lo implementado):** solo CloudTrail. Trail `mh-trail` (una región, validación de archivos de log) con eventos de gestión y eventos de datos de lectura y escritura de objetos del bucket de documentos, hacia `mh-trail-<account>` (privado, TLS obligatorio, borra a los 30 días). Cifrado SSE-S3: usar la CMK exige una sentencia para `cloudtrail.amazonaws.com` en la key policy de `mh-base`, se deja para la versión objetivo. Sin GuardDuty (no viable con `LabRole`) ni CloudWatch Logs (el laboratorio no lo permite); el disparo de `mh-postscan` es la regla `Object Created` de `mh-api` ([02](02-backend.md)).
+
+**Versión objetivo:**
 - **GuardDuty Malware Protection for S3** sobre `mh-docs-<account>` (`AWS::GuardDuty::MalwareProtectionPlan`, con rol de servicio y `TagScanResult: true`). *Verificar que el recurso y los campos existan en `eu-south-2` al escribir el template.*
 - **CloudTrail**: trail con eventos de datos del bucket de documentos y eventos de gestión, hacia un bucket de logs propio cifrado con la CMK. Ojo: CloudTrail solo registra cambios de configuración de API Gateway, no cada petición; para eso están los access logs del stage (ver `mh-api`).
 - **EventBridge rule**: evento `GuardDuty Malware Protection Object Scan Result` → Lambda `mh-postscan` (el target se conecta en `mh-api`, la regla puede vivir allí).

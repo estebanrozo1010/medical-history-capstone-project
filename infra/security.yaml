@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: mh-security - CloudTrail a un bucket S3 propio (docs/01, docs/07). Sin GuardDuty ni CloudWatch Logs (Learner Lab)
+Resources:
+  # shortcut: SSE-S3 en vez de la CMK; usar la CMK exige una sentencia para cloudtrail.amazonaws.com en la key policy de mh-base (versión objetivo)
+  TrailBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'mh-trail-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+      LifecycleConfiguration:
+        Rules:
+          - {Id: limpieza, Status: Enabled, ExpirationInDays: 30}
+  TrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TrailBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SoloTLS
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: [!GetAtt TrailBucket.Arn, !Sub '${TrailBucket.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': 'false'}}
+          # Solo este trail puede escribir (aws:SourceArn evita el "confused deputy")
+          - Sid: CloudTrailAcl
+            Effect: Allow
+            Principal: {Service: cloudtrail.amazonaws.com}
+            Action: 's3:GetBucketAcl'
+            Resource: !GetAtt TrailBucket.Arn
+            Condition: {StringEquals: {'aws:SourceArn': !Sub 'arn:aws:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/mh-trail'}}
+          - Sid: CloudTrailEscribe
+            Effect: Allow
+            Principal: {Service: cloudtrail.amazonaws.com}
+            Action: 's3:PutObject'
+            Resource: !Sub '${TrailBucket.Arn}/AWSLogs/${AWS::AccountId}/*'
+            Condition:
+              StringEquals:
+                's3:x-amz-acl': bucket-owner-full-control
+                'aws:SourceArn': !Sub 'arn:aws:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/mh-trail'
+
+  Trail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn: TrailBucketPolicy
+    Properties:
+      TrailName: mh-trail
+      S3BucketName: !Ref TrailBucket
+      IsLogging: true
+      IsMultiRegionTrail: false
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true
+      EventSelectors:
+        # Gestión: cambios de configuración (incluida la de API Gateway; cada petición queda en los access logs del stage).
+        # Datos: lecturas y escrituras de objetos solo del bucket de documentos (0,10 USD por 100.000 eventos)
+        - ReadWriteType: All
+          IncludeManagementEvents: true
+          DataResources:
+            - Type: AWS::S3::Object
+              Values:
+                - !Sub
+                  - '${Docs}/'
+                  - Docs: !ImportValue mh-base-DocsBucketArn
+Outputs:
+  TrailBucketName: {Value: !Ref TrailBucket, Export: {Name: mh-security-TrailBucketName}}

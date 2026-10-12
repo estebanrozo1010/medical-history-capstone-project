@@ -3,10 +3,22 @@ import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { firstValueFrom, lastValueFrom, tap } from 'rxjs';
-import { CARPETAS, FilesApi, TIPOS_PERMITIDOS, validarArchivo } from '../../core/api/files.api';
+import { catchError, concatMap, filter, firstValueFrom, lastValueFrom, map, of, take, tap, timer } from 'rxjs';
+import { Archivo, CARPETAS, FilesApi, TIPOS_PERMITIDOS, validarArchivo } from '../../core/api/files.api';
+import { ESTADOS } from '../folders/carpeta';
 
-/** Subida simple: pide la URL firmada y hace el PUT directo a S3 con progreso (docs/03). */
+// Tras subir, GET /files?carpeta= cada 3 s hasta que deje de estar PENDING, máximo 2 min (docs/03)
+const CONSULTA_MS = 3000;
+const CONSULTAS = 40;
+
+const MOTIVOS: Partial<Record<Archivo['status'], string>> = {
+  REJECTED: 'el contenido no corresponde al tipo de archivo declarado.',
+  INFECTED: 'se detectó malware en el archivo.',
+  SCAN_FAILED: 'no se pudo revisar el archivo.',
+  UPLOAD_EXPIRED: 'la subida no se completó a tiempo.',
+};
+
+/** Subida simple: pide la URL firmada, hace el PUT directo a S3 con progreso y espera el escaneo (docs/03). */
 @Component({
   selector: 'app-subir',
   imports: [ReactiveFormsModule, RouterLink],
@@ -45,12 +57,18 @@ import { CARPETAS, FilesApi, TIPOS_PERMITIDOS, validarArchivo } from '../../core
         <p class="error" role="alert">{{ error() }}</p>
       }
       @if (subido(); as s) {
-        <p class="exito" role="status">
-          «{{ s.nombre }}» se subió. Estado: Pendiente.
+        <p [class]="s.estado && motivos[s.estado] ? 'error' : 'exito'" role="status">
+          @if (s.estado && motivos[s.estado]) {
+            Subida fallida, vuelve a intentar. «{{ s.nombre }}» quedó {{ estados[s.estado] }}: {{ motivos[s.estado] }}
+          } @else if (s.estado) {
+            «{{ s.nombre }}» se subió. Estado: {{ estados[s.estado] }}{{ s.estado === 'PENDING' ? ' (revisando el archivo…)' : '.' }}
+          } @else {
+            «{{ s.nombre }}» se subió, pero la revisión está tardando. Mira su estado más tarde en la carpeta.
+          }
           <a [routerLink]="['/carpetas', s.carpeta]">Ver la carpeta</a>
         </p>
       }
-      <button type="submit" [disabled]="subiendo()">{{ subiendo() ? 'Subiendo…' : 'Subir' }}</button>
+      <button type="submit" [disabled]="subiendo()">{{ subiendo() ? (progreso() === 100 ? 'Revisando…' : 'Subiendo…') : 'Subir' }}</button>
     </form>
   `,
 })
@@ -68,7 +86,10 @@ export class Subir {
   protected readonly progreso = signal<number | null>(null);
   protected readonly subiendo = signal(false);
   protected readonly error = signal('');
-  protected readonly subido = signal<{ nombre: string; carpeta: string } | null>(null);
+  // estado null: se agotaron las consultas sin salir de PENDING
+  protected readonly subido = signal<{ nombre: string; carpeta: string; estado: Archivo['status'] | null } | null>(null);
+  protected readonly estados = ESTADOS;
+  protected readonly motivos = MOTIVOS;
 
   protected elegir(evento: Event) {
     const archivo = (evento.target as HTMLInputElement).files?.[0] ?? null;
@@ -98,7 +119,9 @@ export class Subir {
         ),
       );
       this.progreso.set(100);
-      this.subido.set({ nombre: archivo.name, carpeta });
+      this.subido.set({ nombre: archivo.name, carpeta, estado: 'PENDING' });
+      const estado = await this.esperarEscaneo(subida.fileId, carpeta);
+      this.subido.set({ nombre: archivo.name, carpeta, estado });
     } catch (e) {
       const http = e instanceof HttpErrorResponse ? e : null;
       this.progreso.set(null);
@@ -109,5 +132,20 @@ export class Subir {
     } finally {
       this.subiendo.set(false);
     }
+  }
+
+  /** Estado final del escaneo, o null si sigue PENDING tras 2 min (o si se sale de la pantalla). */
+  private esperarEscaneo(fileId: string, carpeta: string) {
+    return firstValueFrom(
+      timer(CONSULTA_MS, CONSULTA_MS).pipe(
+        take(CONSULTAS),
+        // Un fallo de red en una consulta no corta la espera
+        concatMap(() => this.api.listar(carpeta).pipe(catchError(() => of<Archivo[]>([])))),
+        map((archivos) => archivos.find((a) => a.fileId === fileId)?.status),
+        filter((s): s is Archivo['status'] => !!s && s !== 'PENDING'),
+        takeUntilDestroyed(this.destroyRef),
+      ),
+      { defaultValue: null },
+    );
   }
 }

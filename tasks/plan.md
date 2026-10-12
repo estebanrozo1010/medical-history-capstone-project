@@ -178,7 +178,7 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 - [x] Reenviar el mismo evento no falla (idempotente) (`aws lambda invoke` con eventos simulados: `SIN_CAMBIOS`; clave ajena: `IGNORADO`)
 - [x] El puerto `ArchivoScanner` tiene dos implementaciones posibles; solo la del validador está activa (`ValidadorDeTipo`; el de GuardDuty solo documentado)
 - [x] Extra de la 9a: la URL de subida firma `If-None-Match: *`; reutilizarla para reemplazar un archivo ya escaneado da 412 (probado con curl)
-- [ ] 9b: `mh-security` con CloudTrail y estado del escaneo en `/subir`
+- [x] 9b: `mh-security` con CloudTrail y estado del escaneo en `/subir` (trail `mh-trail` a `mh-trail-<account>` con SSE-S3; registra gestión y datos de `mh-docs`: `PutObject`, `GetObject` por rango, `HeadObject`, `DeleteObject`. `/subir` consulta cada 3 s y muestra Limpio o "subida fallida" con el motivo; flujo manual con `ng serve`: PDF y PNG → Limpio sin recargar, un `.apk` renombrado a `.pdf` de 45 MB → Rechazado y sin versiones en ningún bucket)
 **Verificación:** tests de `mh-postscan` con eventos simulados; prueba real con un PDF y un `.exe` renombrado; `aws s3api list-object-versions` en ambos buckets.
 **Dependencias:** Tarea 8
 **Archivos probables:** `infra/security.yaml`, `infra/api.yaml`, `backend/application/postscan/ArchivoScanner`, `backend/adapter-in-lambda/PostScanHandler`, `backend/application/postscan/ValidadorDeTipo`

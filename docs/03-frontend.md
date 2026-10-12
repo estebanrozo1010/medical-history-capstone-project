@@ -41,7 +41,7 @@ La config va en `assets/config.json` (generada en el despliegue desde los Output
 1. Validar tipo/tamaño en cliente (misma lista que backend; el backend vuelve a validar).
 2. `POST /files/upload-url` → `PUT` directo a S3 con `HttpClient` (`reportProgress: true`) y los headers firmados que devuelve la API (`Content-Type`, `Content-Length`); **sin** header `Authorization` en esa llamada.
 3. Archivos > 100 MB: flujo multipart (trozos de 16 MB, 3 partes en paralelo, guardar ETag de cada parte).
-4. Tras subir, consultar `GET /files?carpeta=` cada 3 s hasta que `status` salga de `PENDING` (máx. 2 min), mostrar resultado del escaneo. Si la API devuelve `UPLOAD_EXPIRED` o `SCAN_FAILED`, mostrar "subida fallida, vuelve a intentar".
+4. Tras subir, consultar `GET /files?carpeta=` cada 3 s hasta que `status` salga de `PENDING` (máx. 2 min), mostrar resultado del escaneo. Si la API devuelve `UPLOAD_EXPIRED`, `SCAN_FAILED` o `REJECTED` (PoC) / `INFECTED`, mostrar "subida fallida, vuelve a intentar" con el motivo. El resultado va en una región `role=status`; si a los 2 min sigue `PENDING`, se avisa que la revisión tarda (no se da por fallida).
 
 ## Compartir (`features/share`)
 - Selección múltiple: casillas en el listado de archivos (también "seleccionar toda la carpeta"), hasta 50 archivos, solo los `CLEAN` son seleccionables.
