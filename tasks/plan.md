@@ -206,7 +206,7 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 ### Checkpoint 3: Archivos
 - [ ] Subir, escanear, listar, descargar y eliminar funciona de punta a punta
 - [ ] EICAR → `INFECTED`; réplica verificada; CloudTrail registra
-- [x] `mvn verify` (31 tests) y `ng test` (25 tests) pasan
+- [ ] `mvn verify` y `ng test` pasan
 - [ ] Revisión con una persona
 
 ### Fase 3: Links compartidos
