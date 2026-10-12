@@ -18,8 +18,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class FilesHandlerTest {
@@ -157,12 +160,38 @@ class FilesHandlerTest {
           .filter(a -> a.userSub().equals(userSub) && (carpeta == null || a.carpeta().equals(carpeta)))
           .toList();
     }
+
+    @Override
+    public Optional<ArchivoGuardado> obtener(String userSub, String fileId) {
+      return tabla.stream().filter(a -> a.userSub().equals(userSub) && a.fileId().equals(fileId)).findFirst();
+    }
+
+    @Override
+    public boolean cambiarEstado(String userSub, String fileId, String de, String a) {
+      Optional<ArchivoGuardado> g = obtener(userSub, fileId).filter(x -> x.status().equals(de));
+      g.ifPresent(x -> tabla.set(tabla.indexOf(x), new ArchivoGuardado(x.userSub(), x.fileId(), x.carpeta(),
+          x.nombre(), x.contentType(), x.size(), x.s3Key(), a, x.createdAt())));
+      return g.isPresent();
+    }
   }
 
   static class Almacen implements AlmacenDeArchivos {
+    final Map<String, byte[]> objetos = new HashMap<>();
+
     @Override
     public UrlSubida urlSubida(String clave, String contentType, long size, Duration vigencia) {
       return new UrlSubida("https://s3/" + clave, Map.of("content-type", contentType));
+    }
+
+    @Override
+    public byte[] primerosBytes(String clave, int cantidad) {
+      byte[] o = objetos.getOrDefault(clave, new byte[0]);
+      return Arrays.copyOf(o, Math.min(cantidad, o.length));
+    }
+
+    @Override
+    public void borrarTodasLasVersiones(String clave) {
+      objetos.remove(clave);
     }
   }
 }

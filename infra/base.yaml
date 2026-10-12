@@ -41,6 +41,9 @@ Resources:
             ServerSideEncryptionByDefault: {SSEAlgorithm: 'aws:kms', KMSMasterKeyID: !GetAtt Key.Arn}
       VersioningConfiguration: {Status: Enabled}
       PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+      # Eventos al bus por defecto de EventBridge: la regla y mh-postscan viven en mh-api, sin dependencia circular
+      NotificationConfiguration:
+        EventBridgeConfiguration: {EventBridgeEnabled: true}
       CorsConfiguration:
         CorsRules:
           - AllowedMethods: [PUT, GET, HEAD]

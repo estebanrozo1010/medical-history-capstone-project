@@ -21,12 +21,13 @@ class S3AlmacenDeArchivosTest {
       .build(), "mh-docs-test");
 
   @Test
-  void firmaUnPutConContentTypeYContentLengthYDevuelveSoloLoQueFijaElCliente() {
+  void firmaUnPutConContentTypeContentLengthEIfNoneMatchYDevuelveSoloLoQueFijaElCliente() {
     UrlSubida u = almacen.urlSubida("sub-a/f1", "application/pdf", 1000, Duration.ofMinutes(10));
 
     assertTrue(u.url().startsWith("https://mh-docs-test.s3.amazonaws.com/sub-a/f1?"), u.url());
-    assertTrue(u.url().contains("X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"), u.url());
+    // if-none-match: un segundo PUT con la misma URL (aún vigente) no reemplaza el archivo ya escaneado
+    assertTrue(u.url().contains("X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost%3Bif-none-match"), u.url());
     assertTrue(u.url().contains("X-Amz-Expires=600"), u.url());
-    assertEquals(Map.of("content-type", "application/pdf"), u.headers());
+    assertEquals(Map.of("content-type", "application/pdf", "if-none-match", "*"), u.headers());
   }
 }

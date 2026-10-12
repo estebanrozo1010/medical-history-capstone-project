@@ -4,8 +4,10 @@ import com.mh.historial.application.ArchivoGuardado;
 import com.mh.historial.application.ArchivoRepositorio;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 
 /** mh-files (docs/04). Sin carpeta: Query por userSub; con carpeta: Query sobre el LSI byCarpeta. */
@@ -39,11 +41,34 @@ public class DynamoArchivoRepositorio implements ArchivoRepositorio {
       q.indexName("byCarpeta").keyConditionExpression("userSub = :u AND carpeta = :c")
           .expressionAttributeValues(Map.of(":u", s(userSub), ":c", s(carpeta)));
     }
-    return dynamo.queryPaginator(q.build()).items().stream()
-        .map(i -> new ArchivoGuardado(i.get("userSub").s(), i.get("fileId").s(), i.get("carpeta").s(),
-            i.get("nombre").s(), i.get("contentType").s(), Long.parseLong(i.get("size").n()), i.get("s3Key").s(),
-            i.get("status").s(), Long.parseLong(i.get("createdAt").n())))
-        .toList();
+    return dynamo.queryPaginator(q.build()).items().stream().map(DynamoArchivoRepositorio::archivo).toList();
+  }
+
+  @Override
+  public Optional<ArchivoGuardado> obtener(String userSub, String fileId) {
+    Map<String, AttributeValue> item = dynamo.getItem(r -> r.tableName(tabla).consistentRead(true)
+        .key(Map.of("userSub", s(userSub), "fileId", s(fileId)))).item();
+    return item == null || item.isEmpty() ? Optional.empty() : Optional.of(archivo(item));
+  }
+
+  @Override
+  public boolean cambiarEstado(String userSub, String fileId, String de, String a) {
+    try {
+      // status es palabra reservada de DynamoDB
+      dynamo.updateItem(r -> r.tableName(tabla).key(Map.of("userSub", s(userSub), "fileId", s(fileId)))
+          .updateExpression("SET #s = :a").conditionExpression("#s = :de")
+          .expressionAttributeNames(Map.of("#s", "status"))
+          .expressionAttributeValues(Map.of(":a", s(a), ":de", s(de))));
+      return true;
+    } catch (ConditionalCheckFailedException e) {
+      return false;
+    }
+  }
+
+  private static ArchivoGuardado archivo(Map<String, AttributeValue> i) {
+    return new ArchivoGuardado(i.get("userSub").s(), i.get("fileId").s(), i.get("carpeta").s(),
+        i.get("nombre").s(), i.get("contentType").s(), Long.parseLong(i.get("size").n()), i.get("s3Key").s(),
+        i.get("status").s(), Long.parseLong(i.get("createdAt").n()));
   }
 
   private static AttributeValue s(String v) {

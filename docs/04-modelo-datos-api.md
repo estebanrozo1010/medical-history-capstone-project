@@ -23,12 +23,14 @@ Este documento es el **contrato** entre backend ([02](02-backend.md)), frontend 
 | `carpeta` | S | una de las especialidades fijas (ver abajo) |
 | `nombre`, `contentType`, `size` | S/S/N | valores declarados al pedir la subida |
 | `s3Key` | S | `{userSub}/{fileId}` — sin carpeta ni nombre |
-| `status` | S | `PENDING` → `CLEAN` \| `INFECTED` \| `SCAN_FAILED` |
+| `status` | S | PoC: `PENDING` → `CLEAN` \| `REJECTED`. Versión objetivo (GuardDuty): `PENDING` → `CLEAN` \| `INFECTED` \| `SCAN_FAILED` |
 | `createdAt` | N | |
 
 LSI `byCarpeta`: PK `userSub`, SK `carpeta` (listar los archivos de una carpeta). Los links y `mh-postscan` no necesitan índice: la clave S3 `{userSub}/{fileId}` contiene la clave primaria completa y el link guarda `userSub` + `fileIds`, así que se usa `GetItem`/`BatchGetItem` directo.
 
 Estado efectivo al leer: un registro `PENDING` con más de 1 hora desde `createdAt` se devuelve como `UPLOAD_EXPIRED` (calculado, no se guarda) y no se puede compartir.
+
+Estados que escribe `mh-postscan` (ver [02](02-backend.md)): `CLEAN` (descargable y compartible); `REJECTED` en la PoC, cuando los primeros bytes no corresponden al `contentType` declarado (p. ej. un `.exe` renombrado a `.pdf`): el objeto se borra con todas sus versiones en ambos buckets y el registro queda para que el usuario vea el motivo. `INFECTED` y `SCAN_FAILED` quedan reservados al adaptador de GuardDuty de la versión objetivo. Solo `CLEAN` se puede descargar o compartir.
 
 ### `mh-links`
 | Atributo | Tipo | Nota |

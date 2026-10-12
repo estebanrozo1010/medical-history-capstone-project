@@ -10,8 +10,10 @@ import com.mh.historial.domain.ErrorDeDominio;
 import com.mh.historial.domain.SolicitudSubida;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -114,15 +116,49 @@ class ArchivoServicioTest {
           .filter(a -> a.userSub().equals(userSub) && (carpeta == null || a.carpeta().equals(carpeta)))
           .toList();
     }
+
+    @Override
+    public Optional<ArchivoGuardado> obtener(String userSub, String fileId) {
+      return datos.stream().filter(a -> a.userSub().equals(userSub) && a.fileId().equals(fileId)).findFirst();
+    }
+
+    @Override
+    public boolean cambiarEstado(String userSub, String fileId, String de, String a) {
+      for (int i = 0; i < datos.size(); i++) {
+        ArchivoGuardado g = datos.get(i);
+        if (g.userSub().equals(userSub) && g.fileId().equals(fileId) && g.status().equals(de)) {
+          datos.set(i, new ArchivoGuardado(g.userSub(), g.fileId(), g.carpeta(), g.nombre(), g.contentType(),
+              g.size(), g.s3Key(), a, g.createdAt()));
+          return true;
+        }
+      }
+      return false;
+    }
   }
 
   static class AlmacenFalso implements AlmacenDeArchivos {
     String firmado;
+    String leido;
+    byte[] contenido = new byte[0];
+    final List<String> borrados = new ArrayList<>();
+    Runnable alBorrar = () -> {};
 
     @Override
     public UrlSubida urlSubida(String clave, String contentType, long size, Duration vigencia) {
       firmado = clave + "|" + contentType + "|" + size + "|" + vigencia;
       return new UrlSubida("https://s3/" + clave, Map.of("content-type", contentType));
+    }
+
+    @Override
+    public byte[] primerosBytes(String clave, int cantidad) {
+      leido = clave + "|" + cantidad;
+      return Arrays.copyOf(contenido, Math.min(cantidad, contenido.length));
+    }
+
+    @Override
+    public void borrarTodasLasVersiones(String clave) {
+      alBorrar.run();
+      borrados.add(clave);
     }
   }
 }

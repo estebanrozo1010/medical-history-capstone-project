@@ -16,7 +16,7 @@
       <artifactId>application</artifactId>
       <version>${project.version}</version>
     </dependency>
-    <!-- Solo se usa el presigner, que firma en local: sin clientes HTTP -->
+    <!-- Sin Apache ni Netty: el S3Client de mh-postscan lo crea el handler con UrlConnectionHttpClient -->
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>s3</artifactId>

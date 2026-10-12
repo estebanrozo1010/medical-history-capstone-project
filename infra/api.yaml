@@ -113,6 +113,42 @@ Resources:
       Events:
         Listar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files, Method: get}}
         PedirSubida: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files/upload-url, Method: post}}
+
+  PostScanLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/mh-postscan
+      RetentionInDays: 30
+  PostScanFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: PostScanLogs
+    Properties:
+      FunctionName: mh-postscan
+      Role: !Ref LabRoleArn
+      Runtime: java21
+      Handler: com.mh.historial.adapter.in.lambda.PostScanHandler::handleRequest
+      CodeUri: ../backend/adapter-in-lambda/target/mh-lambda.jar
+      MemorySize: 1024
+      # Incluye hasta 40 s de espera a la réplica antes de borrar un rechazado (S3AlmacenDeArchivos)
+      Timeout: 60
+      SnapStart: {ApplyOn: PublishedVersions}
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          FILES_TABLE: mh-files
+          DOCS_BUCKET: !ImportValue mh-base-DocsBucketName
+          BACKUP_BUCKET: !ImportValue mh-base-BackupBucketName
+      Events:
+        # Invocación asíncrona: si falla (p. ej. réplica aún pendiente), Lambda reintenta 2 veces
+        ObjetoCreado:
+          Type: EventBridgeRule
+          Properties:
+            Pattern:
+              source: [aws.s3]
+              detail-type: [Object Created]
+              detail:
+                bucket:
+                  name: [!ImportValue mh-base-DocsBucketName]
 Outputs:
   ApiUrl:
     Description: Base de la API (apiUrl del frontend); las rutas cuelgan de aqui sin /api

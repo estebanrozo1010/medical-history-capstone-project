@@ -25,7 +25,7 @@ Reglas: `domain` y `application` no dependen del SDK de AWS; los adapters implem
 
 ### `mh-files`
 - `ListarArchivos(carpeta?)`: sin carpeta, `Query` por `userSub`; con carpeta, `Query` sobre el LSI `byCarpeta`. Calcula el estado efectivo (`PENDING` de más de 1 h → `UPLOAD_EXPIRED`).
-- `SolicitarSubida`: valida carpeta (lista fija de [04](04-modelo-datos-api.md)), tipo MIME (PDF, JPEG/PNG, MP4) y tamaño máximo; crea registro `PENDING` con `fileId` UUID; devuelve presigned PUT (expira 10 min) con `Content-Type` y `Content-Length` firmados. Clave S3: `{userSub}/{fileId}`.
+- `SolicitarSubida`: valida carpeta (lista fija de [04](04-modelo-datos-api.md)), tipo MIME (PDF, JPEG/PNG, MP4) y tamaño máximo; crea registro `PENDING` con `fileId` UUID; devuelve presigned PUT (expira 10 min) con `Content-Type`, `Content-Length` e `If-None-Match: *` firmados. Clave S3: `{userSub}/{fileId}`. `If-None-Match` impide reutilizar la URL vigente para reemplazar un archivo ya escaneado (S3 responde 412); si se reutiliza tras un rechazo (el objeto ya se borró), `mh-postscan` lo vuelve a borrar.
   *Límite conocido:* una URL firmada de PUT no fija un tope de tamaño por sí sola. Defensa en dos capas: (1) `Content-Length` firmado (verificar al implementar que S3 rechaza otro valor); (2) `mh-postscan` compara el tamaño real (`HeadObject`) con el declarado y, si no coincide, borra el objeto y marca `SCAN_FAILED`.
 - Multipart (archivos > 100 MB): `start` → URL por parte → `complete` (el cliente envía los ETag). Se aborta si falla; el lifecycle del bucket aborta multiparts abandonados a los 7 días.
 - `UrlDescarga`: solo si `status = CLEAN`; presigned GET de 5 min con `response-content-disposition: attachment; filename=<nombre>`.
@@ -41,6 +41,14 @@ Reglas: `domain` y `application` no dependen del SDK de AWS; los adapters implem
 - Sin logs del token completo (solo los primeros 6 caracteres).
 
 ### `mh-postscan`
+**PoC en el Learner Lab (lo implementado, [07](07-learner-lab.md)):**
+- Disparada por la regla de EventBridge `Object Created` del bucket de documentos (la notificación a EventBridge se activa en `mh-base`; la regla vive en `mh-api` junto a la Lambda, así no hay dependencia circular entre stacks).
+- `PostScanServicio` (application) recibe la clave: si no es `{sub}/{uuid}` o no tiene registro en `mh-files`, se ignora con un log; si el registro ya no está `PENDING`, no hace nada (idempotente).
+- Escaneo detrás del puerto `ArchivoScanner`. Adaptador activo: `ValidadorDeTipo`, que lee solo los primeros 12 bytes (`GetObject` con `Range`) y compara con la firma del `contentType` declarado (PDF `%PDF`, PNG `89 50 4E 47 0D 0A 1A 0A`, JPEG `FF D8 FF`, MP4 `ftyp` en el offset 4). Coincide → `CLEAN`; no coincide → `REJECTED`. El adaptador de GuardDuty (abajo) es la segunda implementación del puerto; no está construido.
+- `REJECTED` → borra todas las versiones en ambos buckets **antes** de marcar el registro (actualización condicional `PENDING → REJECTED`). Carrera con la réplica: antes de borrar espera (hasta 40 s) a que ninguna versión del origen tenga `ReplicationStatus=PENDING`; si se agota, la invocación falla sin borrar y Lambda la reintenta (2 reintentos asíncronos). Así la copia al respaldo no puede llegar después del borrado. Medido: el rechazo tarda unos 20 s por esta espera.
+- Un reintento tras un borrado a medias encuentra el objeto ya borrado: `ValidadorDeTipo` lo trata como vacío → `REJECTED` y termina el borrado.
+
+**Versión objetivo (GuardDuty):**
 - Disparada por EventBridge con el resultado de GuardDuty. La clave `{userSub}/{fileId}` da la clave primaria de `mh-files` directamente.
 - `NO_THREATS_FOUND` → comprueba el tamaño real contra el declarado; si coincide, `status=CLEAN`; si no, borra y `status=SCAN_FAILED`.
 - `THREATS_FOUND` → borra **todas las versiones** del objeto en el bucket de documentos y en el de respaldo (la réplica ya pudo copiarlo), `status=INFECTED` (los links dejan de mostrarlo). No hay carpeta de cuarentena.

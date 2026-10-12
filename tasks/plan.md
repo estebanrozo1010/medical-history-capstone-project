@@ -172,11 +172,13 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 **Versión PoC (Learner Lab):** GuardDuty no es viable (ver Resultados del spike). El escaneo va detrás de un puerto `ArchivoScanner` en `application`; la PoC usa el adaptador `ValidadorDeTipo` (extensión, tipo MIME declarado y primeros bytes del archivo, p. ej. `%PDF`). **Versión objetivo:** otro adaptador que lee el resultado de GuardDuty ([docs/01](../docs/01-infra-cloudformation.md) y [docs/02](../docs/02-backend.md)); cambiarlo no toca el resto del código.
 **Descripción:** Lambda `mh-postscan` disparada por la notificación de S3 al crearse un objeto: lee los primeros bytes, valida contra el tipo declarado y marca `CLEAN` o `REJECTED`; si se rechaza, borra todas las versiones (docs y respaldo). Stack `mh-security` solo con CloudTrail a S3 (sin GuardDuty).
 **Criterios de aceptación:**
-- [ ] PDF real pasa a `CLEAN`
-- [ ] Un `.exe` renombrado a `.pdf` pasa a `REJECTED` y no queda ninguna versión en ambos buckets
-- [ ] El estado `INFECTED` queda reservado al adaptador de GuardDuty (versión objetivo)
-- [ ] Reenviar el mismo evento no falla (idempotente)
-- [ ] El puerto `ArchivoScanner` tiene dos implementaciones posibles; solo la del validador está activa
+- [x] PDF real pasa a `CLEAN` (9a, 2026-10-12: PDF válido subido con curl, `CLEAN` en ~3 s)
+- [x] Un `.exe` renombrado a `.pdf` pasa a `REJECTED` y no queda ninguna versión en ambos buckets (también un EICAR como `.pdf`; `list-object-versions`: 0 versiones y 0 marcas en `mh-docs` y `mh-docs-backup`. El rechazo tarda ~20 s porque espera a que la réplica termine antes de borrar)
+- [x] El estado `INFECTED` queda reservado al adaptador de GuardDuty (versión objetivo) (docs/02 y docs/04)
+- [x] Reenviar el mismo evento no falla (idempotente) (`aws lambda invoke` con eventos simulados: `SIN_CAMBIOS`; clave ajena: `IGNORADO`)
+- [x] El puerto `ArchivoScanner` tiene dos implementaciones posibles; solo la del validador está activa (`ValidadorDeTipo`; el de GuardDuty solo documentado)
+- [x] Extra de la 9a: la URL de subida firma `If-None-Match: *`; reutilizarla para reemplazar un archivo ya escaneado da 412 (probado con curl)
+- [ ] 9b: `mh-security` con CloudTrail y estado del escaneo en `/subir`
 **Verificación:** tests de `mh-postscan` con eventos simulados; prueba real con un PDF y un `.exe` renombrado; `aws s3api list-object-versions` en ambos buckets.
 **Dependencias:** Tarea 8
 **Archivos probables:** `infra/security.yaml`, `infra/api.yaml`, `backend/application/postscan/ArchivoScanner`, `backend/adapter-in-lambda/PostScanHandler`, `backend/application/postscan/ValidadorDeTipo`
