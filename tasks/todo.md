@@ -9,7 +9,7 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 - [x] Tarea 4: Stack `mh-auth` y primer ID token (S) — desplegado; registro, confirmación y login SRP verificados, el ID token trae `sub` y `email`
 
 ### Checkpoint 1: Cimientos
-- [ ] Stacks `mh-base` y `mh-auth` desplegados, spike resuelto, revisión humana
+- [x] Stacks `mh-base` y `mh-auth` desplegados, spike resuelto, revisión humana (visto bueno del usuario el 2026-10-12)
 
 ## Fase 1: Registro y perfil
 - [ ] Tarea 5: Frontend base con autenticación (M)
