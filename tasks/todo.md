@@ -26,14 +26,14 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 - [x] Tarea 8: Subir y listar archivos (L; dividir en 8a backend y 8b UI)
   - [x] 8a: `mh-files` en `mh-api` (`POST /files/upload-url` y `GET /files[?carpeta=]`). Probado con curl: 201 con registro `PENDING` y clave `{sub del token}/{fileId}` (el `userSub` del body se ignora); PUT con los headers devueltos 200 y con otro tamaño 403 (`Content-Length` firmado); objeto con `aws:kms`; filtro por carpeta (LSI); carpeta, tipo, tamaño y body inválidos → 400. `UPLOAD_EXPIRED` cubierto por tests (calculado al leer). El CORS del bucket ya permitía PUT desde `localhost:4200`
   - [x] 8b: `FilesApi` y lista fija de carpetas en el front; `/carpetas` (totales con un solo `GET /files`), `/carpetas/:nombre` (tamaño, fecha y estado en español) y `/subir` (validación de tipo y tamaño en el cliente, PUT directo a S3 sin `Authorization` con barra de progreso); menú Carpetas · Subir · Perfil con sesión. `ng test` (41) y `ng build` sin warnings. Flujo manual con `ng serve`: login → subir un PDF real (159 KB) → visto como Pendiente en su carpeta; objeto y registro `PENDING` verificados en AWS
-- [x] Tarea 9: Validación de archivos subidos (`mh-postscan`) y CloudTrail (M; dividida en 9a y 9b)
+- [x] Tarea 9: Validación de archivos subidos (`mh-postscan`) y CloudTrail (M; dividida en 9a y 9b) — visto bueno del usuario el 2026-10-12; los `PENDING` previos revisados con `mh-postscan` (ambos `CLEAN`)
   - [x] 9a: `mh-postscan` (regla EventBridge `Object Created` en `mh-api`; notificación a EventBridge activada en `mh-base`). Puerto `ArchivoScanner` con `ValidadorDeTipo` (12 primeros bytes por `Range`). Probado con curl: PDF → `CLEAN`; `.exe` renombrado y EICAR como `.pdf` → `REJECTED` sin versiones en ningún bucket (espera la réplica antes de borrar); reenviar el evento → `SIN_CAMBIOS`. URL de subida con `If-None-Match: *` (reutilizarla → 412). `mvn verify` (85 tests)
   - [x] 9b: `mh-security` (CloudTrail a S3, SSE-S3, gestión + datos de `mh-docs`; costo de datos < 0,01 USD al ritmo de la PoC) y estado del escaneo en `/subir` (consulta cada 3 s, máx. 2 min, `role=status`). `ng test` (46) y `ng build` sin warnings. Manual: PDF y PNG → Limpio sin recargar; `.apk` renombrado a `.pdf` → Rechazado; el trail entrega a su bucket
 - [ ] Tarea 10: Descargar y eliminar archivos (M)
 - [ ] Tarea 11: Subida multipart (M)
 
 ### Checkpoint 3: Archivos
-- [ ] Subir → escanear → descargar → eliminar, EICAR → `INFECTED`, réplica y CloudTrail verificados, revisión humana
+- [ ] Subir → escanear → descargar → eliminar, EICAR o `.exe` renombrado → `REJECTED` sin versiones en ningún bucket, réplica y CloudTrail verificados, revisión humana
 
 ## Fase 3: Links compartidos
 - [ ] Tarea 12: Crear, listar y apagar links (M)
