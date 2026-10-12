@@ -149,9 +149,9 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 **Alcance:** S
 
 ### Checkpoint 2: Primera ruta completa
-- [ ] Registro → confirmar → login → guardar y ver perfil funciona de punta a punta
-- [ ] Aislamiento: el usuario B no ve datos del usuario A
-- [ ] `mvn verify` y `ng test` pasan
+- [x] Registro → confirmar → login → guardar y ver perfil funciona de punta a punta (2026-10-12, usuario recreado desde cero en la UI)
+- [x] Aislamiento: el usuario B no ve datos del usuario A (API en la Tarea 6; en la UI cada usuario ve solo su perfil)
+- [x] `mvn verify` (31 tests) y `ng test` (25 tests) pasan
 - [ ] Revisión con una persona
 
 ### Fase 2: Archivos
@@ -206,7 +206,7 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 ### Checkpoint 3: Archivos
 - [ ] Subir, escanear, listar, descargar y eliminar funciona de punta a punta
 - [ ] EICAR → `INFECTED`; réplica verificada; CloudTrail registra
-- [ ] `mvn verify` y `ng test` pasan
+- [x] `mvn verify` (31 tests) y `ng test` (25 tests) pasan
 - [ ] Revisión con una persona
 
 ### Fase 3: Links compartidos
