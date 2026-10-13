@@ -208,8 +208,8 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 **Alcance:** M
 
 ### Checkpoint 3: Archivos
-- [ ] Subir, escanear, listar, descargar y eliminar funciona de punta a punta
-- [ ] EICAR o `.exe` renombrado → `REJECTED`, sin versiones en ningún bucket; réplica verificada; CloudTrail registra (en la PoC `INFECTED` queda reservado al adaptador de GuardDuty; ver Tarea 9)
+- [x] Subir, escanear, listar, descargar y eliminar funciona de punta a punta
+- [x] EICAR o `.exe` renombrado → `REJECTED`, sin versiones en ningún bucket; réplica verificada; CloudTrail registra (en la PoC `INFECTED` queda reservado al adaptador de GuardDuty; ver Tarea 9)
 - [ ] `mvn verify` y `ng test` pasan
 - [ ] Revisión con una persona
 
