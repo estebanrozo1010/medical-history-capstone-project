@@ -1,6 +1,6 @@
 # 07 — Restricciones del AWS Academy Learner Lab
 
-Resumen de las instrucciones del laboratorio (última actualización del texto original: 24/06/2025), filtrado a lo que afecta a este proyecto. Las instrucciones pueden cambiar; ante duda, vale el texto del propio laboratorio. Los docs [00](00-plan-general.md) a [05](05-seguridad-y-pruebas.md) fueron escritos antes de conocer estas restricciones y se ajustan tras el spike (Tarea 2 de `tasks/plan.md`).
+Resumen de las instrucciones del laboratorio (última actualización del texto original: 24/06/2025), filtrado a lo que afecta a este proyecto. Las instrucciones pueden cambiar; ante duda, vale el texto del propio laboratorio. Los docs [00](00-plan-general.md) a [05](05-seguridad-y-pruebas.md) describen la arquitectura objetivo; lo que cambia en la PoC está en la tabla de abajo (spike de la Tarea 2 de `tasks/plan.md`).
 
 ## Entorno
 
@@ -30,7 +30,7 @@ Solo `us-east-1` y `us-west-2`. Cargar la consola de un servicio en otra región
 | Amazon CloudWatch | Disponible |
 | Amazon DynamoDB | Puede asumir `LabRole` |
 | Amazon EventBridge | Puede asumir `LabRole` |
-| Amazon GuardDuty | Disponible |
+| Amazon GuardDuty | Disponible, pero Malware Protection for S3 no es viable con `LabRole` (spike) |
 | AWS KMS | Puede asumir `LabRole` |
 | AWS Lambda | Máximo **10 ejecuciones simultáneas**. Asociar `LabRole` a cada función |
 | Amazon S3 | Puede asumir `LabRole` |
@@ -45,10 +45,7 @@ Solo `us-east-1` y `us-west-2`. Cargar la consola de un servicio en otra región
 - **Amazon Cognito**
 - **Amazon CloudFront**
 
-No estar en la lista no confirma que fallen, pero tampoco que funcionen. Ambos son parte central del diseño (login y entrega del frontend), así que la Tarea 2 los prueba antes de construir. Planes B:
-
-- Sin Cognito: login propio con una Lambda de autenticación, una tabla de usuarios y JWT firmado con KMS; cambian las Tareas 4 a 7.
-- Sin CloudFront: el frontend se sirve como sitio estático de S3 y la API se llama directo a API Gateway; cambia la Tarea 16 (y desaparece el WAF de CloudFront y el prefijo `/api`).
+Resultado del spike (2026-10-12): **Cognito funciona** (User Pool, App Client e ID token) y **CloudFront está denegado** (`CreateDistribution` y `CreateOriginAccessControl`). Por eso el frontend se sirve como sitio estático de S3 y la API se llama directo a API Gateway (sin WAF de CloudFront ni prefijo `/api`).
 
 ## Límites de cómputo y red
 
@@ -73,27 +70,32 @@ Los docs [00](00-plan-general.md) a [05](05-seguridad-y-pruebas.md) y el README 
 | Login | Cognito | Cognito (**sin cambios**, funciona) | — |
 | Entrega del frontend | CloudFront + OAC + HTTPS | Sitio estático de S3 público, solo HTTP | CloudFront está denegado |
 | WAF | CloudFront (global) y API Gateway (regional) | Ninguno (throttling del stage de API Gateway) | Sin CloudFront; el regional no se probó |
-| Dominio | Route 53 + ACM | URL del bucket y de API Gateway | No se pueden registrar dominios |
+| Dominio | Route 53 + ACM | URL del sitio de S3 (`http://mh-front-<account>.s3-website-us-east-1.amazonaws.com`) y de API Gateway | No se pueden registrar dominios |
 | Ruta de la API | `/api/*` en el mismo dominio vía CloudFront | URL directa de API Gateway (`https://...execute-api...`) con CORS | Sin CloudFront |
 | Límite por IP en `/s/*` | Regla `rate-based` del WAF | Throttling por stage | Sin WAF de CloudFront |
 | Escaneo de malware | GuardDuty Malware Protection (`CLEAN` / `INFECTED`) | Validador de tipo (extensión, MIME, primeros bytes): `CLEAN` / `REJECTED` | GuardDuty no es viable con `LabRole` |
 | Comparación de tamaño declarado/real | Verificación en `mh-postscan` | No hace falta: S3 rechaza el tamaño distinto (probado) | `Content-Length` firmado funciona |
 | Réplica a Glacier | S3 Replication | **Igual** (probada con `LabRole`) | — |
 | CloudTrail | A CloudWatch y S3 | Solo a S3 | El laboratorio no permite CloudWatch Logs en el trail |
-| Carga | 200 req/s | Escenarios reducidos | Máx. 10 ejecuciones simultáneas de Lambda |
+| Carga | 200 req/s | 8 req/s fijos (p95 < 300 ms) y una ráfaga de 30 req/s que da 429, no 5xx | Máx. 10 ejecuciones simultáneas de Lambda |
 
 El escaneo va detrás de un puerto `ArchivoScanner` (hexagonal): el adaptador de la PoC es el validador de tipo y el de la versión objetivo es el de GuardDuty. Pasar de uno a otro no cambia el resto del backend.
 
-## Impacto en el plan
+## Borrado de la PoC y lo que sobrevive
 
-| Área | Cambio respecto a los docs actuales |
+`infra/teardown.sh` (Git Bash o CloudShell; pide escribir `BORRAR`, `--yes` lo salta) borra en orden inverso a `deploy.sh`: `mh-api` → `mh-edge` → `mh-security` → `mh-auth` → `mh-base`. Antes de cada stack con buckets los vacía por completo (partes multipart en curso, todas las versiones y marcas de borrado, de a 1 000), porque CloudFormation no borra un bucket con objetos; si algo escribió entre medio (CloudTrail, una subida tardía) vuelve a vaciar y reintenta una vez. Detiene el trail antes de vaciar su bucket y vacía `mh-docs` antes que `mh-docs-backup`. Al final lista stacks y buckets `mh-*` que sigan y la llave KMS. Revisar además *Resource Groups & Tag Editor* en `us-east-1`.
+
+Ningún recurso tiene `DeletionPolicy: Retain`, DynamoDB y Cognito no tienen protección contra borrado, y los log groups están definidos en `mh-api` (se borran con él; si una Lambda alcanzó a recrear alguno, el script lo borra).
+
+| Queda tras el borrado | Costo |
 |---|---|
-| Región | `eu-south-2` → `us-east-1` |
-| Roles | Un rol por Lambda → `LabRole` para todo |
-| Dominio | Route 53 / ACM propio → `*.cloudfront.net` |
-| Login | Cognito pendiente de confirmar |
-| Frontend | CloudFront pendiente de confirmar |
-| Carga | 200 req/s inviable con 10 ejecuciones simultáneas; reducir los escenarios de [05](05-seguridad-y-pruebas.md) |
-| Auditoría | CloudTrail solo a S3 |
+| Llave KMS `mh-key` en `PendingDeletion` (CloudFormation usa la ventana por defecto de 30 días; el mínimo es 7) | 0: AWS no cobra las llaves en espera de borrado. El alias se borra, así que redesplegar crea una llave nueva sin conflicto |
+| Configuración de cuenta de API Gateway (rol de CloudWatch = `LabRole`) | 0 |
+| Historial de stacks en `DELETE_COMPLETE` | 0 |
+| Alerta de Budgets `mh-lab-50usd` (creada a mano, fuera de los stacks) | 0 (las 2 primeras son gratis) |
+| Objetos borrados de `mh-docs-backup` antes de 90 días en GLACIER | Se cobra el mínimo de 90 días: centavos con los datos de prueba |
+| Backups PITR de DynamoDB | Se borran con la tabla |
+
+Redesplegar desde cero (`deploy.sh` y `node infra/publish-front.mjs`) cambia el id de API Gateway y el User Pool: `publish-front.mjs` los lee de los exports y actualiza el `config.json` del sitio, `frontend/public/config.json` y `frontend/proxy.conf.json`. Los usuarios de Cognito se pierden: hay que registrarse de nuevo.
 
 Detalle de tareas en [tasks/plan.md](../tasks/plan.md).

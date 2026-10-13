@@ -6,6 +6,8 @@ Ruta: `infra/`. Un template por stack, parámetros comunes `Env` (`dev`/`prod`) 
 
 `mh-base` → `mh-auth` → `mh-security` → `mh-api` → `mh-edge`
 
+**PoC:** `mh-base` → `mh-auth` → `mh-security` → `mh-edge` → `mh-api`, porque `mh-api` importa la URL del sitio (`mh-edge-SiteUrl`) como único origen CORS. El borrado va en orden inverso (`infra/teardown.sh`).
+
 Los stacks se comunican por `Outputs` + `Export` (`mh-base-DocsBucketArn`, etc.) o por parámetros en el script de despliegue.
 
 ## Stacks
@@ -15,7 +17,7 @@ Los stacks se comunican por `Outputs` + `Export` (`mh-base-DocsBucketArn`, etc.)
 - **S3 documentos** `mh-docs-<account>`: SSE-KMS con `BucketKeyEnabled`, versionado ON (requisito de replicación), Block Public Access total, política que exige TLS, CORS solo para el dominio del front (PUT/GET/HEAD, expone `ETag` para multipart; `http://localhost:4200` solo en `dev`), lifecycle que aborta multiparts incompletos a los 7 días y elimina versiones no vigentes a los 30 días.
 - **S3 backup** `mh-docs-backup-<account>`: destino de replicación en misma región, clase de almacenamiento `GLACIER` (o `DEEP_ARCHIVE`), SSE-KMS, versionado ON. Rol de replicación IAM con `kms:Decrypt` (origen) y `kms:Encrypt` (destino); la regla debe incluir `SourceSelectionCriteria: SseKmsEncryptedObjects`. La réplica copia el objeto al llegar, antes del escaneo: por eso `mh-postscan` borra también del respaldo si el archivo resulta infectado (ver [02](02-backend.md)). *Alternativa a verificar:* filtrar la regla por la etiqueta `GuardDutyMalwareScanStatus=NO_THREATS_FOUND`; no se adopta hasta confirmar que S3 replica objetos cuya etiqueta cambia después de la creación.
 - **S3 artefactos** `mh-artifacts-<account>`: jars de las Lambdas que sube `aws cloudformation package` en `infra/deploy.sh`; privado, SSE-S3, TLS obligatorio, borra objetos a los 30 días.
-- **S3 frontend** `mh-front-<account>`: privado, acceso solo vía CloudFront OAC (la política se añade en `mh-edge`).
+- **S3 frontend** `mh-front-<account>`: privado, acceso solo vía CloudFront OAC (la política se añade en `mh-edge`). En la PoC vive en `mh-edge` (ver abajo).
 - **DynamoDB**: `mh-profiles`, `mh-files`, `mh-links` (esquemas en [04](04-modelo-datos-api.md); `mh-files` lleva el LSI `byCarpeta`, que solo se puede definir al crear la tabla), `PAY_PER_REQUEST`, SSE con la CMK, PITR ON, TTL en `mh-links.expiresAt`.
 
 ### `mh-auth` (`infra/auth.yaml`)
@@ -46,6 +48,9 @@ Los stacks se comunican por `Outputs` + `Export` (`mh-base-DocsBucketArn`, etc.)
 - Log groups con retención 30 días.
 
 ### `mh-edge` (`infra/edge.yaml`, parte en `us-east-1`)
+**PoC en el Learner Lab (lo implementado):** solo el bucket `mh-front-<account>` como sitio estático de S3 (HTTP, `IndexDocument` y `ErrorDocument` = `index.html`) con una política pública de solo `s3:GetObject`. Exporta `mh-edge-FrontBucketName` y `mh-edge-SiteUrl`. Sin CloudFront, WAF, ACM ni Route 53 (ver [07](07-learner-lab.md)).
+
+**Versión objetivo:**
 - Certificado ACM y WebACL de WAF con `Scope: CLOUDFRONT` **deben crearse en `us-east-1`** → template separado `infra/edge-us-east-1.yaml` desplegado primero.
 - CloudFront: origen por defecto S3 front con OAC (SPA: error 403/404 → `/index.html`), comportamiento `/api/*` → API Gateway (sin caché, reenvía `Authorization`) con `OriginPath: /v1` (el stage), de modo que `/api/x` llega a API Gateway como `/v1/api/x`; headers de seguridad (HSTS, CSP con `connect-src` para Cognito y S3, X-Content-Type-Options).
 - WAF de CloudFront: reglas gestionadas más una regla `rate-based` por IP para `/api/s/*` (p. ej. 100 peticiones / 5 min). API Gateway no limita por IP ni por usuario.
@@ -53,12 +58,9 @@ Los stacks se comunican por `Outputs` + `Export` (`mh-base-DocsBucketArn`, etc.)
 
 ## Despliegue
 
-```bash
-cfn-lint infra/*.yaml
-aws cloudformation deploy --stack-name mh-base --template-file infra/base.yaml \
-  --capabilities CAPABILITY_NAMED_IAM --region eu-south-2
-# repetir en el orden indicado; script: infra/deploy.sh
-```
+PoC: `infra/deploy.sh` (Git Bash) corre `cfn-lint`, empaqueta el jar de las Lambdas (`mvn package` + `aws cloudformation package` al bucket de artefactos) y despliega los 5 stacks en orden con `LabRoleArn` como parámetro. El frontend se publica aparte con `node infra/publish-front.mjs` ([03](03-frontend.md)). `infra/teardown.sh` borra todo: vacía los buckets versionados y borra los stacks en orden inverso; lo que sobrevive y su costo está en [07](07-learner-lab.md).
+
+Versión objetivo: el mismo script con la región `eu-south-2`, `CAPABILITY_NAMED_IAM` para los roles por Lambda y `infra/edge-us-east-1.yaml` (ACM y WAF de CloudFront) antes de `mh-edge`.
 
 ## Criterios de aceptación
 - `cfn-lint` sin errores en todos los templates.

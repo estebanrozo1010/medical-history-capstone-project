@@ -9,16 +9,16 @@ frontend/src/app/
 ├── core/
 │   ├── auth/            # AuthService (Cognito), authGuard, auth.interceptor
 │   ├── api/             # ProfileApi, FilesApi, LinksApi (HttpClient)
-│   └── config.ts        # lee /assets/config.json (apiUrl, userPoolId, clientId)
+│   └── config.ts        # lee /config.json (public/config.json: apiUrl, userPoolId, clientId, region)
 ├── features/
 │   ├── auth/            # registro, confirmar código, login
 │   ├── folders/         # carpetas por especialidad + listado de archivos
-│   ├── upload/          # subida directa a S3 con progreso
+│   ├── upload/          # subida directa a S3 con progreso (en partes: pendiente, Tarea 11b)
 │   └── share/           # crear link, lista de links, switch on/off
 └── shared/              # componentes UI, pipes
 ```
 
-La config va en `assets/config.json` (generada en el despliegue desde los Outputs de CFN), no compilada, para usar el mismo build en cualquier entorno.
+La config va en `public/config.json` (en el sitio publicado, `apiUrl` sale del export de `mh-api`), no compilada, para usar el mismo build en cualquier entorno.
 
 ## Autenticación
 - Librería: `amazon-cognito-identity-js` (ligera, flujo SRP). Evitar Amplify completo para no inflar el bundle.
@@ -40,7 +40,7 @@ La config va en `assets/config.json` (generada en el despliegue desde los Output
 ## Subida de archivos (`features/upload`)
 1. Validar tipo/tamaño en cliente (misma lista que backend; el backend vuelve a validar).
 2. `POST /files/upload-url` → `PUT` directo a S3 con `HttpClient` (`reportProgress: true`) y los headers firmados que devuelve la API (`Content-Type`, `Content-Length`); **sin** header `Authorization` en esa llamada.
-3. Archivos > 100 MB: flujo multipart (trozos de 16 MB, 3 partes en paralelo, guardar ETag de cada parte).
+3. Archivos > 100 MB: flujo multipart (trozos de 16 MB, 3 partes en paralelo, guardar ETag de cada parte). Backend listo (Tarea 11a); la UI está pendiente (Tarea 11b).
 4. Tras subir, consultar `GET /files?carpeta=` cada 3 s hasta que `status` salga de `PENDING` (máx. 2 min), mostrar resultado del escaneo. Si la API devuelve `UPLOAD_EXPIRED`, `SCAN_FAILED` o `REJECTED` (PoC) / `INFECTED`, mostrar "subida fallida, vuelve a intentar" con el motivo. El resultado va en una región `role=status`; si a los 2 min sigue `PENDING`, se avisa que la revisión tarda (no se da por fallida).
 
 ## Compartir (`features/share`)
@@ -50,7 +50,7 @@ La config va en `assets/config.json` (generada en el despliegue desde los Output
 - Pantalla pública `/compartido/:token` (sin guard, sin interceptor de token): lista los archivos del link con su tamaño y un botón de descarga por archivo (cada uno abre `/api/s/{token}/files/{fileId}`), y muestra "enlace no disponible" ante un 410.
 
 ## Despliegue
-**PoC (Learner Lab, Tarea 16):** `node infra/publish-front.mjs` (sirve en PowerShell y en Git Bash, con las credenciales del lab en el entorno). Hace `ng build`, escribe en el `dist` un `config.json` con `apiUrl` = export `mh-api-ApiUrl` y sube al bucket del stack `mh-edge` (sitio estático de S3, `http://mh-front-<account>.s3-website-us-east-1.amazonaws.com`) en tres `aws s3 sync`: `.js`/`.css` (con hash) con `Cache-Control: public, max-age=31536000, immutable`; el resto (`index.html`, `config.json`, favicon) con `no-cache`; y al final `--delete`, para no borrar los chunks viejos antes de que el `index.html` nuevo esté arriba.
+**PoC (Learner Lab, Tarea 16):** `node infra/publish-front.mjs` (sirve en PowerShell y en Git Bash, con las credenciales del lab en el entorno). Hace `ng build`, escribe en el `dist` un `config.json` con `apiUrl` = export `mh-api-ApiUrl` y sube al bucket del stack `mh-edge` (sitio estático de S3, `http://mh-front-<account>.s3-website-us-east-1.amazonaws.com`) en tres `aws s3 sync`: `.js`/`.css` (con hash) con `Cache-Control: public, max-age=31536000, immutable`; el resto (`index.html`, `config.json`, favicon) con `no-cache`; y al final `--delete`, para no borrar los chunks viejos antes de que el `index.html` nuevo esté arriba. Antes del build actualiza `public/config.json` (`userPoolId`, `clientId`) y el `target` de `proxy.conf.json` con los exports de `mh-auth` y `mh-api`, porque redesplegar desde cero cambia esos ids.
 
 En desarrollo `public/config.json` tiene `"apiUrl": "/v1"` y `ng serve` reenvía `/v1` a API Gateway con `proxy.conf.json`: el navegador ve un solo origen y no hay CORS, porque la API solo permite el origen del sitio. Las subidas (PUT firmado directo a S3) siguen permitidas desde `localhost:4200` por el CORS del bucket de documentos en `dev`.
 

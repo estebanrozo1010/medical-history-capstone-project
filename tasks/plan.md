@@ -358,9 +358,22 @@ Notas del entorno: en este equipo (Git Bash) los heredocs largos fallan; crea lo
 #### Tarea 19: Cierre y entrega
 **Descripción:** Actualizar README y docs con lo que cambió, script de borrado de stacks, y pasar `/agent-skills:ship`.
 **Criterios de aceptación:**
-- [ ] README y docs reflejan lo implementado
-- [ ] Un script borra todos los stacks sin dejar buckets ni costos
-**Verificación:** despliegue y borrado completos en la cuenta de pruebas.
+- [x] README y docs reflejan lo implementado (README: PoC frente a objetivo, desplegar, publicar, `ng serve` con proxy, borrar; docs 00, 01, 03 y 07 al día; 11b marcada como pendiente donde aplica)
+- [ ] Un script borra todos los stacks sin dejar buckets ni costos (`infra/teardown.sh` escrito y probado por partes; **no se ejecutó**: el usuario pidió no borrar la infraestructura del lab)
+**Verificación:** despliegue y borrado completos en la cuenta de pruebas. **No hecha** por decisión del usuario (2026-10-13): queda pendiente correr `teardown.sh`, comprobar con `list-stacks`, `aws s3 ls` y Tag Editor, y redesplegar con `deploy.sh` + `publish-front.mjs` (incluido registrar el usuario de prueba y el flujo básico).
+**Prueba parcial (2026-10-13):** `bash -n`; `empty_bucket` contra un bucket temporal propio (versionado, 2 versiones de una clave con espacio, marca de borrado sobre un objeto `GLACIER`, 2 multipart en curso) → 0 versiones, 0 multipart y `delete-bucket` OK, repetido tras cada arreglo; `delete_stack` de un stack inexistente → "no existe"; reintento con un `wait` simulado que falla → vacía otra vez y reintenta; con `AWS_DEFAULT_REGION=us-west-2` sale sin tocar nada. Las consultas de solo lectura de la comprobación final (log groups, buckets, llave KMS, stacks) dan lo esperado contra la cuenta real. `publish-front.mjs`: la parte que lee los exports y reescribe `public/config.json` y `proxy.conf.json`, corrida sola → `git diff` vacío con los stacks actuales.
+**Decisiones de la 19:** script en Bash como `deploy.sh` (pedido del usuario), con un envoltorio `aws()` para Git Bash: `tr -d '\r'` (`aws.exe` termina en `\r\n`) y `MSYS2_ARG_CONV_EXCL='*'` (Git Bash convierte `/aws/lambda/...` en ruta de Windows; `MSYS_NO_PATHCONV` no sirve porque también deja sin convertir la ruta de `AWS_SHARED_CREDENTIALS_FILE`). Pide escribir `BORRAR` (`--yes` lo salta) y aborta si la región no es `us-east-1` (los nombres de bucket son globales). Orden: `mh-api` → `mh-edge` → `mh-security` (antes `stop-logging`) → `mh-auth` → `mh-base` (docs antes que el respaldo). Vaciado con `list-object-versions --no-paginate` (máx. 1000 entre versiones y marcas por llamada) y `delete-objects` por archivo (límite de línea de comandos en Windows). Si un stack falla, vacía otra vez y reintenta una vez. Lo que sobrevive y su costo, en [docs/07](../docs/07-learner-lab.md): llave KMS en espera 30 días (sin costo), cuenta de API Gateway, historial de stacks y Budgets (sin costo), mínimo de 90 días de GLACIER (centavos). Para el redespliegue, `publish-front.mjs` toma `userPoolId`, `clientId` y la URL de la API de los exports y actualiza el `config.json` del sitio, `public/config.json` y `proxy.conf.json` (tras un redespliegue quedan como cambios en git). No se escribieron credenciales ni contraseñas en el repo.
+
+**Resultado de `/agent-skills:ship` (2026-10-13): GO para la sustentación de la PoC; NO-GO para dar el plan por cerrado.** Tres revisiones en paralelo (código, seguridad, pruebas), sin cambios de lógica:
+- Pruebas: `mvn verify` 166 tests y `ng test` 93 tests, todo en verde. `npm audit --omit=dev`: 0 vulnerabilidades. Sin secretos en el repo ni en el historial (`git grep`, `git log -p`).
+- Critical: ninguno. High: ninguno.
+- Corregido en `teardown.sh` (lo vieron código y seguridad): dentro de `if !` bash ignora `set -e`, así que un `wait` fallido imprimía "borrado" y el reintento nunca corría (`|| return 1`). También: `--max-items 1000` podía armar lotes de más de 1000 claves, y desde otra región se vaciaban los buckets sin encontrar los stacks (guarda de `us-east-1`).
+- **Pendientes que bloquean cerrar el plan:** UI multipart (11b) sin hacer; Tarea 17 sin cerrar (incluida la carrera de borrar durante el escaneo anotada en `todo.md`, sin test que la reproduzca); Checkpoints 3 y 4 sin el recorrido completo registrado (links reales con cada permiso, vencido → 410); borrado y redespliegue completos de esta tarea.
+- **Recomendado (seguridad, Medium):** `logout` no revoca el refresh token (válido 30 días; `auth.service.ts:80-85`, `auth.yaml:35`): `globalSignOut` o `RevokeToken`, y bajar la validez para la demo.
+- **Recomendado (Low):** CSP y `referrer=no-referrer` por `<meta>` en `index.html` (la URL compartida lleva el token); throttling propio y más bajo para `/s/*` (hoy un anónimo puede agotar el 10/20 del stage para todos); los logs de error guardan el `toString()` de las `SdkException` (puede traer `{sub}/{fileId}`).
+- **Huecos de pruebas (medio):** sin tests de `KmsCifrador` (encryption context = `sub`), `DynamoLinkRepositorio`, `DynamoPerfilRepositorio` ni del condicional de `cambiarEstado` contra el SDK; sin pruebas de concurrencia (dos `DELETE`, `complete` tras `DELETE`); scripts de infra sin pruebas automáticas ni CI; pantallas de login, registro y confirmar sin spec.
+- Riesgos aceptados de la PoC: `LabRole` para todo; front por HTTP sin CloudFront, WAF, HSTS ni cabeceras; refresh token en `sessionStorage`; validador por primeros bytes en vez de GuardDuty (un PDF válido con malware pasa); la URL firmada sirve hasta 15 s tras apagar el link; carga probada a 8 req/s, no a 200.
+- Rollback: todo es CloudFormation; ante un error tras un cambio, `git revert` del commit y volver a correr `deploy.sh` y `node infra/publish-front.mjs` (minutos). Si la cuenta queda inconsistente, `teardown.sh` y despliegue desde cero (unos 15 min más registrar el usuario de prueba).
 **Dependencias:** Tareas 17, 18
 **Archivos probables:** `README.md`, `docs/*`, `infra/teardown.sh`
 **Alcance:** S
@@ -369,6 +382,11 @@ Notas del entorno: en este equipo (Git Bash) los heredocs largos fallan; crea lo
 - [ ] Todos los criterios de aceptación de las Tareas 1 a 19 cumplidos
 - [ ] Flujo completo en el dominio final
 - [ ] Listo para sustentación
+
+**Estado para la revisión del usuario (2026-10-13):**
+- Criterios de las Tareas 1 a 19: **todavía no.** Faltan la 11b (UI multipart), la 17 (revisión de seguridad), los Checkpoints 3 y 4 y el borrado y redespliegue de la 19 (ver el resultado de `/ship` en la Tarea 19).
+- Flujo completo en el dominio final: **se puede dar por cumplido en la PoC.** El dominio final de la PoC es el sitio de S3 (`http://mh-front-<account>.s3-website-us-east-1.amazonaws.com`): el Learner Lab deniega CloudFront y no permite registrar dominios (spike, punto b), así que no hay otro dominio posible. Es el único origen que acepta la API (CORS) y la base de las URL compartidas, y el usuario recorrió el flujo en ese sitio el 2026-10-13 (Tarea 16). En la versión objetivo el criterio pide CloudFront + dominio propio con HTTPS.
+- Listo para sustentación: cuando los pendientes de arriba estén resueltos o declarados fuera de alcance.
 
 ## Riesgos y mitigaciones
 
@@ -385,7 +403,7 @@ Notas del entorno: en este equipo (Git Bash) los heredocs largos fallan; crea lo
 
 ## Decisiones del usuario
 
-- Sin dominio propio: la Tarea 16 usa `*.cloudfront.net` (sin Route 53 ni ACM propio).
+- Sin dominio propio: la Tarea 16 iba a usar `*.cloudfront.net`; como CloudFront está denegado en el lab, la PoC usa la URL del sitio de S3 (sin Route 53 ni ACM propio).
 - Cuenta: **AWS Academy Learner Lab**, presupuesto de 50 USD. Todo se despliega con CloudFormation.
 - Verificación de correo: pendiente de explicar y decidir (ver el chat; por defecto, con código).
 

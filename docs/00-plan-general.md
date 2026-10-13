@@ -8,11 +8,11 @@
 
 | Concepto | Nombre |
 |---|---|
-| Región | `eu-south-2` (ACM de CloudFront y WAF de CloudFront en `us-east-1`) |
+| Región | `eu-south-2` (ACM de CloudFront y WAF de CloudFront en `us-east-1`); la PoC usa `us-east-1` |
 | Prefijo de recursos | `mh-` |
 | Stacks CloudFormation | `mh-base`, `mh-auth`, `mh-security`, `mh-api`, `mh-edge` |
 | Tablas DynamoDB | `mh-profiles`, `mh-files`, `mh-links` |
-| Buckets | `mh-docs-<account>`, `mh-docs-backup-<account>`, `mh-front-<account>` |
+| Buckets | `mh-docs-<account>`, `mh-docs-backup-<account>`, `mh-front-<account>`, `mh-artifacts-<account>` (jars), `mh-trail-<account>` (CloudTrail) |
 | Lambdas | `mh-profile`, `mh-files`, `mh-links`, `mh-postscan` |
 | Estructura repo | `backend/`, `frontend/`, `infra/`, `docs/`, `diagramas/` |
 

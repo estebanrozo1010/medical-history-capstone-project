@@ -14,13 +14,21 @@ const exportado = (name) => execSync(
 
 const apiUrl = exportado('mh-api-ApiUrl');
 const bucket = exportado('mh-edge-FrontBucketName');
-if (!apiUrl.startsWith('https://') || !bucket) throw new Error('Faltan los exports de mh-api o mh-edge');
+const userPoolId = exportado('mh-auth-UserPoolId');
+const clientId = exportado('mh-auth-UserPoolClientId');
+if (!apiUrl.startsWith('https://') || !bucket || !userPoolId || !clientId) {
+  throw new Error('Faltan los exports de mh-api, mh-edge o mh-auth');
+}
+
+// Redesplegar desde cero cambia el id de API Gateway y el User Pool: ng serve (config.json y proxy) sigue a los stacks
+const writeJson = (url, edit) => writeFileSync(url, JSON.stringify(edit(JSON.parse(readFileSync(url))), null, 2) + '\n');
+writeJson(new URL('public/config.json', frontend), (c) => ({ ...c, userPoolId, clientId }));
+writeJson(new URL('proxy.conf.json', frontend), (p) => ({ ...p, '/v1': { ...p['/v1'], target: new URL(apiUrl).origin } }));
 
 run('npx ng build', frontend);
 
 // En dev apiUrl es /v1 (proxy de ng serve); el sitio publicado llama a API Gateway directo
-const configUrl = new URL('config.json', dist);
-writeFileSync(configUrl, JSON.stringify({ ...JSON.parse(readFileSync(configUrl)), apiUrl }, null, 2));
+writeJson(new URL('config.json', dist), (c) => ({ ...c, apiUrl }));
 
 const s3 = `s3://${bucket}`;
 // Sin la barra final: en Windows `\"` escaparia la comilla
