@@ -85,9 +85,11 @@ print("link", token[:6], "con", f1["nombre"], "|", f2["nombre"], "|", f3["nombre
 s, h, b = curl("GET", f"{API}/s/{token}")
 lista = json.loads(b)
 verifica("GET /s/{token} 200 sin Authorization", s == 200, (s, b))
-verifica("lista los 3 en orden con nombre, tipo y tamaño",
-         [a["fileId"] for a in lista["archivos"]] == [f1["fileId"], f2["fileId"], f3["fileId"]]
-         and lista["archivos"][2] == {"fileId": f3["fileId"], "nombre": "Exámen 13 ñ.pdf",
+# fileIds es un SS: DynamoDB no conserva el orden, se compara como conjunto
+nuevo = next((a for a in lista["archivos"] if a["fileId"] == f3["fileId"]), None)
+verifica("lista los 3 con nombre, tipo y tamaño",
+         {a["fileId"] for a in lista["archivos"]} == {f1["fileId"], f2["fileId"], f3["fileId"]}
+         and nuevo == {"fileId": f3["fileId"], "nombre": "Exámen 13 ñ.pdf",
                                       "contentType": "application/pdf", "size": os.path.getsize(pdf)}, lista)
 verifica("no-store y CORS en el 200", h.get("cache-control") == "no-store"
          and h.get("access-control-allow-origin") == "http://localhost:4200", h)
@@ -112,10 +114,15 @@ for nombre, fid in (("de A fuera del link", fuera["fileId"]), ("de B", b_pdf["fi
     verifica(f"fileId {nombre} -> 404", s == 404 and b"NO_ENCONTRADO" in b, (s, b))
 
 # --- eliminar un archivo del link ---
-s, _, _ = curl("DELETE", f"{API}/files/{f3['fileId']}", TA)
+# 409 = la réplica al respaldo sigue en curso justo después de subir (Tarea 10): se reintenta
+for _ in range(6):
+    s, _, _ = curl("DELETE", f"{API}/files/{f3['fileId']}", TA)
+    if s != 409:
+        break
+    time.sleep(5)
 verifica("DELETE del PDF nuevo 204", s == 204, s)
 lista = json.loads(curl("GET", f"{API}/s/{token}")[2])
-verifica("el eliminado desaparece de la lista", [a["fileId"] for a in lista["archivos"]] == [f1["fileId"], f2["fileId"]],
+verifica("el eliminado desaparece de la lista", {a["fileId"] for a in lista["archivos"]} == {f1["fileId"], f2["fileId"]},
          lista)
 s, _, _ = curl("GET", f"{API}/s/{token}/files/{f3['fileId']}")
 verifica("descargar el eliminado -> 404", s == 404, s)

@@ -96,7 +96,8 @@ public class LinkServicio {
 
   /**
    * Pública (GET /s/{token}): vacío si no existe, está apagado o venció (el handler responde el mismo 410). Si está
-   * vigente, solo sus archivos CLEAN que aún existen, en el orden del link.
+   * vigente, solo sus archivos CLEAN que aún existen, en el orden de
+   * fileIds (un SS de DynamoDB: no es el orden en que se eligieron, pero sí estable entre lecturas).
    */
   public Optional<LinkDelUsuario> resolver(String token) {
     return vigente(token).map(l -> {
