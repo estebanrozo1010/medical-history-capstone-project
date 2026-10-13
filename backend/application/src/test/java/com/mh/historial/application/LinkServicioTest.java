@@ -265,13 +265,13 @@ class LinkServicioTest {
   // --- DescargarDeLink (pública) ---
 
   @Test
-  void descargaFirmaUnMinutoConElNombreOriginal() {
+  void descargaFirma15SegundosConElNombreOriginal() {
     archivos.crear(new ArchivoGuardado("sub-a", "f1", "cardiologia", "Exámen ñ.pdf", "application/pdf", 1, "sub-a/f1",
         "CLEAN", AHORA));
     String token = servicio.crear("sub-a", List.of("f1"), 60, "ambos").token();
 
     assertEquals(Optional.of("https://s3/get/sub-a/f1"), servicio.urlDescarga(token, "f1", false));
-    assertEquals("sub-a/f1|" + ArchivoServicio.disposicion("Exámen ñ.pdf") + "|PT1M", almacen.descarga);
+    assertEquals("sub-a/f1|" + ArchivoServicio.disposicion("Exámen ñ.pdf") + "|PT15S", almacen.descarga);
   }
 
   @Test
@@ -281,7 +281,7 @@ class LinkServicioTest {
     String token = servicio.crear("sub-a", List.of("f1"), 60, "ambos").token();
 
     assertEquals(Optional.of("https://s3/get/sub-a/f1"), servicio.urlDescarga(token, "f1", true));
-    assertEquals("sub-a/f1|inline; filename=\"Examen n.pdf\"; filename*=UTF-8''Ex%C3%A1men%20%C3%B1.pdf|PT1M",
+    assertEquals("sub-a/f1|inline; filename=\"Examen n.pdf\"; filename*=UTF-8''Ex%C3%A1men%20%C3%B1.pdf|PT15S",
         almacen.descarga);
   }
 

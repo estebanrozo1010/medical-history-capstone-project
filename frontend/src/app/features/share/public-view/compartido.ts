@@ -95,7 +95,7 @@ export class Compartido {
     if (this.document.visibilityState === 'visible' && this.estado() !== 'cargando') this.cargar();
   }
 
-  /** Destino de Ver y Descargar: navegación, no HttpClient (el 302 lleva a una URL firmada de 1 min). */
+  /** Destino de Ver y Descargar: navegación, no HttpClient (el 302 lleva a una URL firmada de 15 s). */
   protected archivoUrl(a: ArchivoCompartido) {
     return `${this.api.url(this.token)}/files/${encodeURIComponent(a.fileId)}`;
   }

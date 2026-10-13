@@ -23,8 +23,9 @@ public class LinkServicio {
 
   static final int MAX_ARCHIVOS = 50;
   static final int MAX_TTL_MINUTOS = 1440;
-  // El 302 se sigue al instante y S3 solo valida la firma al empezar: una descarga larga no se corta
-  static final Duration VIGENCIA_DESCARGA = Duration.ofMinutes(1);
+  // Corta para que, tras apagar el link, recargar la URL de S3 deje de servir pronto. Alcanza: el 302 se sigue al
+  // instante y S3 solo valida la firma al empezar, así que una descarga larga no se corta
+  static final Duration VIGENCIA_DESCARGA = Duration.ofSeconds(15);
   private static final Pattern TOKEN = Pattern.compile("[A-Za-z0-9_-]{43}");
   static final Set<String> PERMISOS = Set.of("ver", "descargar", "ambos");
 
