@@ -51,8 +51,11 @@ class PostScanHandlerTest {
   }
 
   @Test
-  void objetoSinRegistroOConClaveAjenaSeIgnora() throws Exception {
-    assertEquals("IGNORADO", handler.handleRequest(evento(SUB + "/" + PDF_ID), null));
+  void objetoSinRegistroSeBorraYConClaveAjenaSeIgnora() throws Exception {
+    almacen.objetos.put(SUB + "/" + PDF_ID, "%PDF".getBytes());
+
+    assertEquals("HUERFANO_BORRADO", handler.handleRequest(evento(SUB + "/" + PDF_ID), null));
+    assertFalse(almacen.objetos.containsKey(SUB + "/" + PDF_ID));
     assertEquals("IGNORADO", handler.handleRequest(evento("otra/cosa.txt"), null));
   }
 

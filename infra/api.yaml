@@ -102,6 +102,7 @@ Resources:
       Handler: com.mh.historial.adapter.in.lambda.FilesHandler::handleRequest
       CodeUri: ../backend/adapter-in-lambda/target/mh-lambda.jar
       MemorySize: 1024
+      # DELETE espera hasta 8 s la réplica al respaldo (FilesHandler); si no termina responde 409
       Timeout: 15
       SnapStart: {ApplyOn: PublishedVersions}
       AutoPublishAlias: live
@@ -109,10 +110,13 @@ Resources:
         Variables:
           FILES_TABLE: mh-files
           DOCS_BUCKET: !ImportValue mh-base-DocsBucketName
+          BACKUP_BUCKET: !ImportValue mh-base-BackupBucketName
           ALLOWED_ORIGIN: !Ref AllowedOrigin
       Events:
         Listar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files, Method: get}}
         PedirSubida: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files/upload-url, Method: post}}
+        PedirDescarga: {Type: Api, Properties: {RestApiId: !Ref Api, Path: '/files/{fileId}/download-url', Method: get}}
+        Eliminar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: '/files/{fileId}', Method: delete}}
 
   PostScanLogs:
     Type: AWS::Logs::LogGroup

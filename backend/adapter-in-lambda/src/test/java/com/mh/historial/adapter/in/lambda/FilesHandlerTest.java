@@ -31,7 +31,8 @@ class FilesHandlerTest {
   static final long AHORA = 1_700_000_000L;
 
   final List<ArchivoGuardado> tabla = new ArrayList<>();
-  final FilesHandler handler = new FilesHandler(new ArchivoServicio(new Repo(tabla), new Almacen(),
+  final Almacen almacen = new Almacen();
+  final FilesHandler handler = new FilesHandler(new ArchivoServicio(new Repo(tabla), almacen,
       Clock.fixed(Instant.ofEpochSecond(AHORA), ZoneOffset.UTC)), "http://localhost:4200");
 
   @Test
@@ -98,6 +99,72 @@ class FilesHandlerTest {
   }
 
   @Test
+  void downloadUrlDeUnCleanResponde200ConUrlYExpiresIn() throws Exception {
+    guardado("sub-a", "f1", "CLEAN");
+
+    APIGatewayProxyResponseEvent r = handler.handleRequest(conFileId("GET", "/files/{fileId}/download-url", "sub-a", "f1"), null);
+
+    assertEquals(200, r.getStatusCode());
+    assertEquals(Map.of("url", "https://s3/get/sub-a/f1", "expiresIn", 300), JSON.std.mapFrom(r.getBody()));
+  }
+
+  @Test
+  void downloadUrlDeUnNoCleanResponde409() throws Exception {
+    guardado("sub-a", "f1", "PENDING");
+
+    APIGatewayProxyResponseEvent r = handler.handleRequest(conFileId("GET", "/files/{fileId}/download-url", "sub-a", "f1"), null);
+
+    assertEquals(409, r.getStatusCode());
+    assertEquals("CONFLICTO", JSON.std.mapFrom(r.getBody()).get("code"));
+  }
+
+  @Test
+  void fileIdAjenoOInexistenteResponde404EnDescargarYEliminar() throws Exception {
+    guardado("sub-a", "f1", "CLEAN");
+
+    for (String[] caso : new String[][] {{"sub-b", "f1"}, {"sub-a", "no-existe"}}) {
+      for (APIGatewayProxyRequestEvent p : List.of(conFileId("GET", "/files/{fileId}/download-url", caso[0], caso[1]),
+          conFileId("DELETE", "/files/{fileId}", caso[0], caso[1]))) {
+        APIGatewayProxyResponseEvent r = handler.handleRequest(p, null);
+        assertEquals(404, r.getStatusCode(), p.getHttpMethod() + " " + caso[0]);
+        assertEquals("NO_ENCONTRADO", JSON.std.mapFrom(r.getBody()).get("code"));
+      }
+    }
+    assertEquals(1, tabla.size());
+    assertTrue(almacen.objetos.containsKey("sub-a/f1"));
+  }
+
+  @Test
+  void deleteResponde204SinBodyYBorraObjetoYRegistro() {
+    guardado("sub-a", "f1", "CLEAN");
+
+    APIGatewayProxyResponseEvent r = handler.handleRequest(conFileId("DELETE", "/files/{fileId}", "sub-a", "f1"), null);
+
+    assertEquals(204, r.getStatusCode());
+    assertEquals(null, r.getBody());
+    assertEquals("http://localhost:4200", r.getHeaders().get("Access-Control-Allow-Origin"));
+    assertTrue(tabla.isEmpty());
+    assertFalse(almacen.objetos.containsKey("sub-a/f1"));
+  }
+
+  @Test
+  void deleteConLaReplicaEnCursoResponde409YConservaElRegistro() throws Exception {
+    guardado("sub-a", "f1", "CLEAN");
+    FilesHandler replicando = new FilesHandler(new ArchivoServicio(new Repo(tabla), new Almacen() {
+      @Override
+      public void borrarTodasLasVersiones(String clave) {
+        throw new IllegalStateException("La réplica al respaldo sigue pendiente");
+      }
+    }, Clock.systemUTC()), "http://localhost:4200");
+
+    APIGatewayProxyResponseEvent r = replicando.handleRequest(conFileId("DELETE", "/files/{fileId}", "sub-a", "f1"), null);
+
+    assertEquals(409, r.getStatusCode());
+    assertEquals("CONFLICTO", JSON.std.mapFrom(r.getBody()).get("code"));
+    assertEquals(1, tabla.size());
+  }
+
+  @Test
   void sinClaimsResponde401() {
     APIGatewayProxyRequestEvent sinAuth = new APIGatewayProxyRequestEvent().withHttpMethod("GET").withResource("/files")
         .withRequestContext(new ProxyRequestContext());
@@ -142,6 +209,15 @@ class FilesHandlerTest {
         .withRequestContext(contexto);
   }
 
+  static APIGatewayProxyRequestEvent conFileId(String metodo, String ruta, String sub, String fileId) {
+    return peticion(metodo, ruta, sub, null, null).withPathParameters(Map.of("fileId", fileId));
+  }
+
+  void guardado(String sub, String fileId, String status) {
+    tabla.add(new ArchivoGuardado(sub, fileId, "otros", "a.pdf", "application/pdf", 1, sub + "/" + fileId, status, AHORA));
+    almacen.objetos.put(sub + "/" + fileId, new byte[] {1});
+  }
+
   static class Repo implements ArchivoRepositorio {
     final List<ArchivoGuardado> tabla;
 
@@ -173,6 +249,11 @@ class FilesHandlerTest {
           x.nombre(), x.contentType(), x.size(), x.s3Key(), a, x.createdAt())));
       return g.isPresent();
     }
+
+    @Override
+    public void eliminar(String userSub, String fileId) {
+      tabla.removeIf(a -> a.userSub().equals(userSub) && a.fileId().equals(fileId));
+    }
   }
 
   static class Almacen implements AlmacenDeArchivos {
@@ -181,6 +262,11 @@ class FilesHandlerTest {
     @Override
     public UrlSubida urlSubida(String clave, String contentType, long size, Duration vigencia) {
       return new UrlSubida("https://s3/" + clave, Map.of("content-type", contentType));
+    }
+
+    @Override
+    public String urlDescarga(String clave, String contentDisposition, Duration vigencia) {
+      return "https://s3/get/" + clave;
     }
 
     @Override

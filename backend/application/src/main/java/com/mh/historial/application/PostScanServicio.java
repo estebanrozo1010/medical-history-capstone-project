@@ -22,7 +22,7 @@ public class PostScanServicio {
     this.almacen = almacen;
   }
 
-  /** Devuelve el resultado para el log: CLEAN, REJECTED, SIN_CAMBIOS (ya no estaba PENDING) o IGNORADO. */
+  /** Devuelve el resultado para el log: CLEAN, REJECTED, SIN_CAMBIOS (ya no estaba PENDING), HUERFANO_BORRADO o IGNORADO. */
   public String procesar(String clave) {
     Matcher m = CLAVE.matcher(clave == null ? "" : clave);
     if (!m.matches()) {
@@ -30,7 +30,9 @@ public class PostScanServicio {
     }
     ArchivoGuardado archivo = repositorio.obtener(m.group(1), m.group(2)).orElse(null);
     if (archivo == null) {
-      return "IGNORADO";
+      // El registro se crea antes de firmar la subida: sin registro, el archivo se eliminó y esto es un PUT tardío
+      almacen.borrarTodasLasVersiones(clave);
+      return "HUERFANO_BORRADO";
     }
     if ("REJECTED".equals(archivo.status())) {
       // Un PUT repetido con la URL aún vigente pudo recrear el objeto después del borrado

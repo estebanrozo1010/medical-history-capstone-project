@@ -103,11 +103,12 @@ class PostScanServicioTest {
   }
 
   @Test
-  void objetoSinRegistroEnMhFilesSeIgnora() {
-    assertEquals("IGNORADO", servicio.procesar(CLAVE));
+  void objetoSinRegistroEnMhFilesSeBorraSinEscanear() {
+    // El registro se crea antes de firmar la subida: sin registro = archivo eliminado (un PUT tardío con la URL vigente)
+    assertEquals("HUERFANO_BORRADO", servicio.procesar(CLAVE));
 
     assertTrue(escaneados.isEmpty());
-    assertTrue(almacen.borrados.isEmpty());
+    assertEquals(List.of(CLAVE), almacen.borrados);
   }
 
   @Test

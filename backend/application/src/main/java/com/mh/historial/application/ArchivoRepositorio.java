@@ -15,4 +15,6 @@ public interface ArchivoRepositorio {
 
   /** Cambia el status solo si sigue siendo `de`; false si el registro no existe o ya cambió. */
   boolean cambiarEstado(String userSub, String fileId, String de, String a);
+
+  void eliminar(String userSub, String fileId);
 }

@@ -2,18 +2,22 @@ package com.mh.historial.application;
 
 import com.mh.historial.domain.Archivo;
 import com.mh.historial.domain.Carpetas;
+import com.mh.historial.domain.ErrorDeDominio;
 import com.mh.historial.domain.SolicitudSubida;
+import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
-/** Casos de uso de mh-files: SolicitarSubida y ListarArchivos (docs/02). El userSub sale del ID token. */
+/** Casos de uso de mh-files (docs/02). El userSub sale del ID token: un fileId ajeno no se encuentra. */
 public class ArchivoServicio {
 
   static final Duration VIGENCIA_URL = Duration.ofMinutes(10);
   static final long VIGENCIA_PENDIENTE = Duration.ofHours(1).toSeconds();
+  public static final Duration VIGENCIA_DESCARGA = Duration.ofMinutes(5);
 
   private final ArchivoRepositorio repositorio;
   private final AlmacenDeArchivos almacen;
@@ -46,6 +50,48 @@ public class ArchivoServicio {
         .map(g -> new Archivo(g.fileId(), g.carpeta(), g.nombre(), g.contentType(), g.size(),
             estadoEfectivo(g, ahora), g.createdAt()))
         .toList();
+  }
+
+  public String urlDescarga(String userSub, String fileId) {
+    ArchivoGuardado g = propio(userSub, fileId);
+    if (!"CLEAN".equals(g.status())) {
+      throw new ErrorDeDominio(ErrorDeDominio.Tipo.CONFLICTO, "Solo se puede descargar un archivo limpio (CLEAN)");
+    }
+    return almacen.urlDescarga(g.s3Key(), disposicion(g.nombre()), VIGENCIA_DESCARGA);
+  }
+
+  /** En cualquier estado: primero todas las versiones en ambos buckets y después el registro. */
+  public void eliminar(String userSub, String fileId) {
+    ArchivoGuardado g = propio(userSub, fileId);
+    try {
+      almacen.borrarTodasLasVersiones(g.s3Key());
+    } catch (IllegalStateException e) {
+      // La espera de mh-files es corta (timeout de 15 s): solo pasa si se borra justo después de subir
+      throw new ErrorDeDominio(ErrorDeDominio.Tipo.CONFLICTO,
+          "La copia de respaldo sigue en curso; reintenta en unos segundos");
+    }
+    repositorio.eliminar(userSub, fileId);
+  }
+
+  /** RFC 6266: filename ASCII de respaldo (sin tildes; comillas, \ y lo demás a _) y filename* en UTF-8 (RFC 5987). */
+  static String disposicion(String nombre) {
+    String ascii = Normalizer.normalize(nombre, Normalizer.Form.NFD).replaceAll("\\p{M}", "")
+        .replaceAll("[^\\x20-\\x7E]|[\"\\\\]", "_");
+    StringBuilder utf8 = new StringBuilder();
+    for (byte b : nombre.getBytes(StandardCharsets.UTF_8)) {
+      char c = (char) (b & 0xff);
+      if (c < 0x80 && (Character.isLetterOrDigit(c) || "!#$&+-.^_`|~".indexOf(c) >= 0)) {
+        utf8.append(c);
+      } else {
+        utf8.append('%').append(String.format("%02X", b & 0xff));
+      }
+    }
+    return "attachment; filename=\"" + ascii + "\"; filename*=UTF-8''" + utf8;
+  }
+
+  private ArchivoGuardado propio(String userSub, String fileId) {
+    return repositorio.obtener(userSub, fileId)
+        .orElseThrow(() -> new ErrorDeDominio(ErrorDeDominio.Tipo.NO_ENCONTRADO, "Archivo no encontrado"));
   }
 
   /** Calculado al leer, no se guarda (docs/04). */

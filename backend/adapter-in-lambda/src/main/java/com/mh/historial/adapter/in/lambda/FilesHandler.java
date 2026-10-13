@@ -21,17 +21,23 @@ import java.util.Map;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
-/** Lambda mh-files: POST /files/upload-url y GET /files (docs/04). El userSub sale del ID token. */
+/** Lambda mh-files: subir, listar, descargar y eliminar (docs/04). El userSub sale del ID token. */
 public class FilesHandler implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
+
+  // Timeout de 15 s: si la réplica de un archivo recién subido no termina en 8 s, DELETE responde 409 y se reintenta
+  private static final Duration ESPERA_REPLICA = Duration.ofSeconds(8);
 
   private final ArchivoServicio servicio;
   private final Map<String, String> cabeceras;
 
   /** Lambda lo instancia en el init, así los clientes de AWS quedan en el snapshot de SnapStart. */
   public FilesHandler() {
-    this(new S3AlmacenDeArchivos(S3Presigner.create(), System.getenv("DOCS_BUCKET")));
+    this(new S3AlmacenDeArchivos(S3Presigner.create(),
+        S3Client.builder().httpClient(UrlConnectionHttpClient.create()).build(),
+        System.getenv("DOCS_BUCKET"), System.getenv("BACKUP_BUCKET"), ESPERA_REPLICA));
   }
 
   private FilesHandler(S3AlmacenDeArchivos almacen) {
@@ -42,8 +48,10 @@ public class FilesHandler implements RequestHandler<APIGatewayProxyRequestEvent,
             almacen,
             Clock.systemUTC()),
         System.getenv("ALLOWED_ORIGIN"));
-    // Priming de SnapStart (como mh-profile): firma en local y GET de un sub sin archivos, sin escribir nada
+    // Priming de SnapStart (como mh-profile): firma en local, GET de S3 y de un sub sin archivos, sin escribir nada
     almacen.urlSubida("snapstart/priming", "application/pdf", 1, Duration.ofMinutes(1));
+    almacen.urlDescarga("snapstart/priming", "attachment", Duration.ofMinutes(1));
+    almacen.primerosBytes("snapstart/priming", 1);
     APIGatewayProxyRequestEvent.ProxyRequestContext contexto = new APIGatewayProxyRequestEvent.ProxyRequestContext();
     contexto.setAuthorizer(Map.of("claims", Map.of("sub", "snapstart-priming")));
     handleRequest(new APIGatewayProxyRequestEvent().withHttpMethod("GET").withResource("/files")
@@ -67,6 +75,12 @@ public class FilesHandler implements RequestHandler<APIGatewayProxyRequestEvent,
       return switch (evento.getHttpMethod() + " " + evento.getResource()) {
         case "POST /files/upload-url" -> subida(servicio.solicitarSubida(sub, leer(evento.getBody())));
         case "GET /files" -> respuesta(200, servicio.listar(sub, carpeta(evento)).stream().map(FilesHandler::json).toList());
+        case "GET /files/{fileId}/download-url" -> respuesta(200, Map.of("url", servicio.urlDescarga(sub, fileId(evento)),
+            "expiresIn", ArchivoServicio.VIGENCIA_DESCARGA.toSeconds()));
+        case "DELETE /files/{fileId}" -> {
+          servicio.eliminar(sub, fileId(evento));
+          yield new APIGatewayProxyResponseEvent().withStatusCode(204).withHeaders(cabeceras);
+        }
         default -> error(405, "METODO_NO_PERMITIDO", "Método no soportado");
       };
     } catch (ErrorDeDominio e) {
@@ -84,6 +98,10 @@ public class FilesHandler implements RequestHandler<APIGatewayProxyRequestEvent,
 
   private static String carpeta(APIGatewayProxyRequestEvent evento) {
     return evento.getQueryStringParameters() == null ? null : evento.getQueryStringParameters().get("carpeta");
+  }
+
+  private static String fileId(APIGatewayProxyRequestEvent evento) {
+    return evento.getPathParameters().get("fileId");
   }
 
   private static SolicitudSubida leer(String body) {

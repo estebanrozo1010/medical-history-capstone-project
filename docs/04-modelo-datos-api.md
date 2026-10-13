@@ -78,8 +78,8 @@ Validación (`400 VALIDACION`): `nombre` 1–100 caracteres; `cedula` de 5 a 15 
 | `POST /files/multipart/part-url` | `{fileId, uploadId, partNumber}` | `200 {url}` |
 | `POST /files/multipart/complete` | `{fileId, uploadId, parts:[{partNumber, etag}]}` | `200` |
 | `POST /files/multipart/abort` | `{fileId, uploadId}` | `204` |
-| `GET /files/{fileId}/download-url` | — | `200 {url, expiresIn}` · `409` si no está `CLEAN` |
-| `DELETE /files/{fileId}` | — | `204` (borra todas las versiones, ver [02](02-backend.md)) |
+| `GET /files/{fileId}/download-url` | — | `200 {url, expiresIn: 300}` · `409` si no está `CLEAN` · `404` ajeno o inexistente |
+| `DELETE /files/{fileId}` | — | `204` en cualquier estado (borra todas las versiones, ver [02](02-backend.md)) · `409` si la réplica al respaldo sigue en curso (reintentar) · `404` ajeno o inexistente |
 
 Tipos permitidos: `application/pdf`, `image/jpeg`, `image/png`, `video/mp4`. Tamaño máximo en la PoC: 2 GB (video). El nombre original se devuelve al descargar con `response-content-disposition`; no forma parte de la clave S3.
 

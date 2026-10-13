@@ -65,6 +65,11 @@ public class DynamoArchivoRepositorio implements ArchivoRepositorio {
     }
   }
 
+  @Override
+  public void eliminar(String userSub, String fileId) {
+    dynamo.deleteItem(r -> r.tableName(tabla).key(Map.of("userSub", s(userSub), "fileId", s(fileId))));
+  }
+
   private static ArchivoGuardado archivo(Map<String, AttributeValue> i) {
     return new ArchivoGuardado(i.get("userSub").s(), i.get("fileId").s(), i.get("carpeta").s(),
         i.get("nombre").s(), i.get("contentType").s(), Long.parseLong(i.get("size").n()), i.get("s3Key").s(),

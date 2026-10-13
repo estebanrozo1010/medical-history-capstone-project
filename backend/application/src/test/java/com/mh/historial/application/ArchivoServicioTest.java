@@ -3,6 +3,7 @@ package com.mh.historial.application;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mh.historial.application.PerfilServicioTest.MutableClock;
 import com.mh.historial.domain.Archivo;
@@ -102,6 +103,97 @@ class ArchivoServicioTest {
     assertEquals("CLEAN", servicio.listar("sub-a", null).get(0).status());
   }
 
+  // --- UrlDescarga ---
+
+  @Test
+  void cleanSeDescargaConUrlDeCincoMinutosYElNombreOriginalComoAdjunto() {
+    guardado("f1", "examen.pdf", "CLEAN", 0);
+
+    assertEquals("https://s3/get/sub-a/f1", servicio.urlDescarga("sub-a", "f1"));
+
+    assertEquals("sub-a/f1|attachment; filename=\"examen.pdf\"; filename*=UTF-8''examen.pdf|PT5M", almacen.descarga);
+  }
+
+  @Test
+  void noCleanNoSeDescarga() {
+    guardado("f1", "a.pdf", "PENDING", reloj.segundos);
+    guardado("f2", "a.pdf", "REJECTED", 0);
+    guardado("f3", "a.pdf", "PENDING", 0);
+
+    for (String fileId : new String[] {"f1", "f2", "f3"}) {
+      ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.urlDescarga("sub-a", fileId));
+      assertEquals(ErrorDeDominio.Tipo.CONFLICTO, e.tipo(), fileId);
+    }
+    assertEquals(null, almacen.descarga);
+  }
+
+  @Test
+  void archivoAjenoOInexistenteNoSeEncuentra() {
+    guardado("f1", "a.pdf", "CLEAN", 0);
+
+    for (String sub : new String[] {"sub-b", "sub-a"}) {
+      String fileId = sub.equals("sub-b") ? "f1" : "no-existe";
+      assertEquals(ErrorDeDominio.Tipo.NO_ENCONTRADO,
+          assertThrows(ErrorDeDominio.class, () -> servicio.urlDescarga(sub, fileId)).tipo());
+      assertEquals(ErrorDeDominio.Tipo.NO_ENCONTRADO,
+          assertThrows(ErrorDeDominio.class, () -> servicio.eliminar(sub, fileId)).tipo());
+    }
+    assertEquals(1, repo.datos.size());
+    assertTrue(almacen.borrados.isEmpty());
+  }
+
+  @Test
+  void disposicionConTildesComillasYEnieUsaFilenameEstrellaYRespaldoAscii() {
+    assertEquals("attachment; filename=\"Examen _ano_ n.pdf\"; filename*=UTF-8''Ex%C3%A1men%20%22a%C3%B1o%22%20%C3%B1.pdf",
+        ArchivoServicio.disposicion("Exámen \"año\" ñ.pdf"));
+    // ; y \ no rompen el header; lo que no es ASCII imprimible queda en _
+    assertEquals("attachment; filename=\"a;b_c__.pdf\"; filename*=UTF-8''a%3Bb%5Cc%E2%82%AC%F0%9F%A9%BA.pdf",
+        ArchivoServicio.disposicion("a;b\\c€🩺.pdf"));
+  }
+
+  // --- EliminarArchivo ---
+
+  @Test
+  void eliminarBorraLasVersionesYDespuesElRegistroEnCualquierEstado() {
+    for (String estado : new String[] {"CLEAN", "REJECTED", "PENDING"}) {
+      guardado("f-" + estado, "a.pdf", estado, reloj.segundos);
+      almacen.alBorrar = () -> assertEquals(1, repo.datos.size(), "el registro sigue mientras se borra el objeto");
+
+      servicio.eliminar("sub-a", "f-" + estado);
+
+      assertEquals("sub-a/f-" + estado, almacen.borrados.get(almacen.borrados.size() - 1));
+      assertTrue(repo.datos.isEmpty(), estado);
+    }
+  }
+
+  @Test
+  void eliminarUnUploadExpiredSinObjetoNoFalla() {
+    guardado("f1", "a.pdf", "PENDING", 0);
+    assertEquals("UPLOAD_EXPIRED", servicio.listar("sub-a", null).get(0).status());
+
+    servicio.eliminar("sub-a", "f1");
+
+    assertTrue(repo.datos.isEmpty());
+  }
+
+  @Test
+  void siLaReplicaSigueEnCursoResponde409YNoBorraElRegistro() {
+    guardado("f1", "a.pdf", "CLEAN", 0);
+    almacen.alBorrar = () -> {
+      throw new IllegalStateException("La réplica al respaldo sigue pendiente");
+    };
+
+    ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.eliminar("sub-a", "f1"));
+
+    assertEquals(ErrorDeDominio.Tipo.CONFLICTO, e.tipo());
+    assertEquals(1, repo.datos.size());
+  }
+
+  private void guardado(String fileId, String nombre, String status, long createdAt) {
+    repo.crear(new ArchivoGuardado("sub-a", fileId, "otros", nombre, "application/pdf", 1, "sub-a/" + fileId, status,
+        createdAt));
+  }
+
   static class RepoEnMemoria implements ArchivoRepositorio {
     final List<ArchivoGuardado> datos = new ArrayList<>();
 
@@ -134,10 +226,16 @@ class ArchivoServicioTest {
       }
       return false;
     }
+
+    @Override
+    public void eliminar(String userSub, String fileId) {
+      datos.removeIf(a -> a.userSub().equals(userSub) && a.fileId().equals(fileId));
+    }
   }
 
   static class AlmacenFalso implements AlmacenDeArchivos {
     String firmado;
+    String descarga;
     String leido;
     byte[] contenido = new byte[0];
     final List<String> borrados = new ArrayList<>();
@@ -147,6 +245,12 @@ class ArchivoServicioTest {
     public UrlSubida urlSubida(String clave, String contentType, long size, Duration vigencia) {
       firmado = clave + "|" + contentType + "|" + size + "|" + vigencia;
       return new UrlSubida("https://s3/" + clave, Map.of("content-type", contentType));
+    }
+
+    @Override
+    public String urlDescarga(String clave, String contentDisposition, Duration vigencia) {
+      descarga = clave + "|" + contentDisposition + "|" + vigencia;
+      return "https://s3/get/" + clave;
     }
 
     @Override

@@ -189,9 +189,9 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 #### Tarea 10: Descargar y eliminar archivos
 **Descripción:** `GET /files/{id}/download-url` (solo `CLEAN`, con `response-content-disposition`) y `DELETE /files/{id}` (borra todas las versiones). UI: botones descargar y eliminar.
 **Criterios de aceptación:**
-- [ ] Descarga de archivo no `CLEAN` responde 409
-- [ ] Eliminar borra registro y todas las versiones en ambos buckets
-- [ ] El usuario B recibe 404 con el `fileId` del usuario A
+- [x] Descarga de archivo no `CLEAN` responde 409
+- [x] Eliminar borra registro y todas las versiones en ambos buckets
+- [x] El usuario B recibe 404 con el `fileId` del usuario A
 **Verificación:** tests de autorización; comprobación manual con `list-object-versions`.
 **Dependencias:** Tarea 9
 **Archivos probables:** `backend/application/files/*`, `backend/adapter-out-s3/*`, `frontend/src/app/features/folders/*`

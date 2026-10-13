@@ -24,11 +24,6 @@ public class S3AlmacenDeArchivos implements AlmacenDeArchivos {
   private final String respaldo;
   private final Duration esperaReplica;
 
-  /** Solo firma (mh-files). shortcut: sin S3Client ni respaldo; la Tarea 10 (borrar) usa el otro constructor. */
-  public S3AlmacenDeArchivos(S3Presigner presigner, String bucket) {
-    this(presigner, null, bucket, null, Duration.ZERO);
-  }
-
   public S3AlmacenDeArchivos(S3Presigner presigner, S3Client s3, String bucket, String respaldo,
       Duration esperaReplica) {
     this.presigner = presigner;
@@ -52,6 +47,13 @@ public class S3AlmacenDeArchivos implements AlmacenDeArchivos {
       }
     });
     return new UrlSubida(p.url().toString(), headers);
+  }
+
+  @Override
+  public String urlDescarga(String clave, String contentDisposition, Duration vigencia) {
+    return presigner.presignGetObject(r -> r.signatureDuration(vigencia)
+        .getObjectRequest(o -> o.bucket(bucket).key(clave).responseContentDisposition(contentDisposition)))
+        .url().toString();
   }
 
   @Override

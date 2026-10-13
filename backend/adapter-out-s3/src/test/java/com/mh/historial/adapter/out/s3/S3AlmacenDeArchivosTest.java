@@ -18,7 +18,7 @@ class S3AlmacenDeArchivosTest {
   final S3AlmacenDeArchivos almacen = new S3AlmacenDeArchivos(S3Presigner.builder()
       .region(Region.US_EAST_1)
       .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("AKIDFALSO", "secreto")))
-      .build(), "mh-docs-test");
+      .build(), null, "mh-docs-test", null, Duration.ZERO);
 
   @Test
   void firmaUnPutConContentTypeContentLengthEIfNoneMatchYDevuelveSoloLoQueFijaElCliente() {
@@ -29,5 +29,16 @@ class S3AlmacenDeArchivosTest {
     assertTrue(u.url().contains("X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost%3Bif-none-match"), u.url());
     assertTrue(u.url().contains("X-Amz-Expires=600"), u.url());
     assertEquals(Map.of("content-type", "application/pdf", "if-none-match", "*"), u.headers());
+  }
+
+  @Test
+  void firmaUnGetConLaDisposicionEnLaQuery() {
+    String url = almacen.urlDescarga("sub-a/f1", "attachment; filename=\"a n.pdf\"; filename*=UTF-8''a%20%C3%B1.pdf",
+        Duration.ofMinutes(5));
+
+    assertTrue(url.startsWith("https://mh-docs-test.s3.amazonaws.com/sub-a/f1?"), url);
+    assertTrue(url.contains("X-Amz-Expires=300"), url);
+    // El % del filename* va codificado otra vez dentro de la query: S3 lo devuelve tal cual en el header
+    assertTrue(url.contains("response-content-disposition=attachment%3B%20filename%3D%22a%20n.pdf%22%3B%20filename%2A%3DUTF-8%27%27a%2520%25C3%25B1.pdf"), url);
   }
 }
