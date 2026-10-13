@@ -13,9 +13,9 @@ Este README y los docs `00` a `05` describen la arquitectura objetivo. Lo que ca
 
 ## 1. Arquitectura general
 
-Diagrama completo en `diagramas/historial-medico-arquitectura.drawio` (abrir en [app.diagrams.net](https://app.diagrams.net)) y su vista de referencia en `diagramas/historial-medico-arquitectura.png`.
+Diagrama de la arquitectura objetivo en `diagramas/medical-historyv2.drawio` (abrir en [app.diagrams.net](https://app.diagrams.net)) y su vista de referencia en `diagramas/medical-historyv2.png`.
 
-### Componentes
+### Componentes (versión objetivo)
 
 | Servicio | Rol |
 |---|---|
@@ -103,25 +103,108 @@ El bucket de documentos replica automáticamente (S3 Replication, misma región)
 
 Stacks de la PoC (en orden de despliegue): `mh-base` (KMS, buckets de documentos, respaldo y artefactos, tablas), `mh-auth` (Cognito), `mh-security` (CloudTrail), `mh-edge` (sitio del frontend) y `mh-api` (API Gateway y las 4 Lambdas). `mh-api` importa exports de `mh-base`, `mh-auth` y `mh-edge`.
 
-## 4. Desplegar, publicar, desarrollar y borrar
+## 4. Instalación de la PoC paso a paso
 
-Requisitos: Java 21, Maven, Node 20+, AWS CLI v2, `cfn-lint` y Git Bash (los `.sh`). Credenciales del lab ("AWS Details") en un archivo fuera de git, por ejemplo `aws-credentials` en la raíz (ya está en `.gitignore`).
+Todo se hace desde **PowerShell** en Windows; los dos scripts `.sh` corren con el Bash de Git for Windows. En CloudShell o Linux los mismos pasos funcionan con `bash infra/...` y `export` en lugar de `$env:`.
 
-En PowerShell:
+### 4.1 Herramientas
+
+| Herramienta | Versión usada | Para qué | Instalación en Windows |
+|---|---|---|---|
+| Java 21 | Amazon Corretto 21 | Compilar las Lambdas | `winget install Amazon.Corretto.21.JDK` |
+| Maven | 3.9 | Build del backend | Zip de [maven.apache.org](https://maven.apache.org/download.cgi) y su `bin` en el `PATH` |
+| Node.js | 20 o superior (probado con 25) | Angular y los scripts `.mjs` | `winget install OpenJS.NodeJS.LTS` |
+| AWS CLI v2 | 2.37 | Despliegue y comprobaciones | `winget install Amazon.AWSCLI` |
+| cfn-lint | 1.57 | Validar los templates (lo corre `deploy.sh`) | `pip install cfn-lint` |
+| Git for Windows | — | Git y Bash para los `.sh` | `winget install Git.Git` |
+| k6 (opcional) | 2.3 | Pruebas de carga | `winget install GrafanaLabs.k6` o el zip de [k6.io](https://k6.io) |
+
+Angular CLI no hace falta global: se usa con `npx ng` desde `frontend/`. Comprobar con `java -version`, `mvn -v`, `node -v`, `aws --version` y `cfn-lint --version`.
+
+### 4.2 Credenciales del Learner Lab
+
+1. En AWS Academy: *Start Lab* y esperar el punto verde.
+2. *AWS Details* → *Show* en "AWS CLI" y copiar el bloque `[default]` (`aws_access_key_id`, `aws_secret_access_key` y `aws_session_token`) a un archivo `aws-credentials` en la raíz del repo. Está en `.gitignore`: **nunca** se sube.
+3. En cada terminal nueva:
 
 ```powershell
 $env:AWS_SHARED_CREDENTIALS_FILE = "$PWD\aws-credentials"
 $env:AWS_DEFAULT_REGION = "us-east-1"
-& "C:\Program Files\Git\bin\bash.exe" infra/deploy.sh   # cfn-lint, jar de las Lambdas y los 5 stacks en orden
-node infra/publish-front.mjs                              # ng build y sync al sitio; imprime la URL
+aws sts get-caller-identity
 ```
 
-- `publish-front.mjs` toma de los exports la URL de la API (`config.json` del sitio) y el User Pool, y actualiza `frontend/public/config.json` y `frontend/proxy.conf.json`: tras redesplegar desde cero (cambian los ids) basta con correrlo.
-- Desarrollo: `cd frontend; npx ng serve` en `http://localhost:4200`. El front llama a `/v1` y el proxy lo reenvía a API Gateway, así que no hay CORS.
-- Usuario de prueba: se registra desde la app (`/registro`, código por correo). Para probar la API con `curl`: `node infra/id-token.mjs` con `MH_EMAIL` y `MH_PASSWORD` en variables de entorno.
-- Pruebas: `mvn -f backend/pom.xml verify` y, en `frontend/`, `npx ng test --watch=false`. Carga: [tasks/carga-tarea-18.md](tasks/carga-tarea-18.md).
+Las credenciales vencen con la sesión del lab: si un comando responde `ExpiredToken`, se copian otra vez. Presupuesto del lab: 50 USD; si se supera se pierde la cuenta (ver [docs/07](docs/07-learner-lab.md)). Conviene una alerta de AWS Budgets (la de este proyecto, `mh-lab-50usd`, se creó a mano).
 
-**Borrar todo (irreversible):** `& "C:\Program Files\Git\bin\bash.exe" infra/teardown.sh` pide escribir `BORRAR`. Borra los stacks en orden inverso, vaciando antes los buckets (todas las versiones y marcas de borrado, también el respaldo en GLACIER), y al final lista lo que queda. Sobrevive sin costo: la llave KMS en espera de borrado (30 días; no cobra mientras espera), la configuración de cuenta de API Gateway, el historial de stacks borrados y la alerta de Budgets. Glacier cobra igual el mínimo de 90 días de lo que se borre antes (centavos con los datos de prueba). Detalle en [docs/07](docs/07-learner-lab.md).
+### 4.3 Desplegar el backend y la infraestructura
+
+```powershell
+cd frontend; npm ci; cd ..
+& "C:\Program Files\Git\bin\bash.exe" infra/deploy.sh
+```
+
+`deploy.sh` corre `cfn-lint`, compila el jar de las Lambdas (`mvn package`), lo sube al bucket de artefactos y despliega en orden `mh-base` → `mh-auth` → `mh-security` → `mh-edge` → `mh-api`. Se puede volver a correr: sin cambios no hace nada.
+
+### 4.4 Publicar el frontend
+
+```powershell
+node infra/publish-front.mjs
+```
+
+Hace `ng build`, escribe en el `config.json` del sitio la URL de la API y el User Pool (de los exports de los stacks) y sube el build al bucket del sitio. Al final imprime la URL: `http://mh-front-<cuenta>.s3-website-us-east-1.amazonaws.com`. También actualiza `frontend/public/config.json` y `frontend/proxy.conf.json` para `ng serve`; tras un despliegue desde cero esos dos archivos quedan con cambios en git (son ids públicos, se pueden commitear).
+
+El sitio es HTTP (sin CloudFront en el lab). Si Chrome tiene activo "Usar siempre conexiones seguras", muestra un aviso que hay que aceptar.
+
+### 4.5 Usuario de prueba y recorrido básico
+
+1. Abrir la URL del sitio → *Registro* con un correo real (llega un código) → *Confirmar* → *Login*.
+2. El primer login lleva al formulario de perfil (la cédula y la fecha se guardan cifradas).
+3. *Subir* un PDF o una imagen → en su carpeta pasa de Pendiente a Limpio en unos segundos (un `.exe` renombrado a `.pdf` queda Rechazado y se borra).
+4. En la carpeta, marcar archivos limpios → *Compartir* (duración y permiso) → copiar la URL y abrirla en una ventana privada → Ver o Descargar.
+5. *Compartidos* → apagar el switch → la ventana privada muestra "Enlace no disponible" al recargar.
+
+Los usuarios viven en Cognito: se pierden al borrar los stacks.
+
+### 4.6 Desarrollo local y pruebas
+
+```powershell
+cd frontend; npx ng serve          # http://localhost:4200, contra la API real
+npx ng test --watch=false          # pruebas del frontend (Vitest)
+cd ..; mvn -f backend/pom.xml verify   # pruebas del backend (JUnit 5)
+```
+
+`ng serve` usa `/v1` y el proxy de `proxy.conf.json` lo reenvía a API Gateway, así que no hay CORS. Hay que usar el puerto 4200: es el único origen local que acepta el bucket de documentos para las subidas.
+
+Para probar la API con `curl`, el ID token sale de `node infra/id-token.mjs` con el correo y la contraseña en variables de entorno (no se escriben en ningún archivo):
+
+```powershell
+$env:MH_EMAIL = "correo@ejemplo.com"
+$clave = Read-Host "Contraseña" -AsSecureString
+$env:MH_PASSWORD = [Net.NetworkCredential]::new("", $clave).Password
+node infra/id-token.mjs | Out-File -Encoding ascii "$env:TEMP\mh-token.txt"
+```
+
+Pruebas de carga (opcional): pasos e informe en [tasks/carga-tarea-18.md](tasks/carga-tarea-18.md) y scripts en `tests/load/`.
+
+### 4.7 Borrar todo
+
+```powershell
+& "C:\Program Files\Git\bin\bash.exe" infra/teardown.sh
+```
+
+**Irreversible.** Pide escribir `BORRAR` y se niega si la región no es `us-east-1`. Borra los stacks en orden inverso (`mh-api` → `mh-edge` → `mh-security` → `mh-auth` → `mh-base`), vaciando antes los buckets (todas las versiones y marcas de borrado, también el respaldo en GLACIER), y al final lista lo que queda. Sobrevive sin costo: la llave KMS en espera de borrado (30 días; no cobra mientras espera), la configuración de cuenta de API Gateway, el historial de stacks borrados y la alerta de Budgets. Glacier cobra el mínimo de 90 días de lo que se borre antes (centavos con los datos de prueba). Para volver a levantar todo: pasos 4.3 a 4.5. Detalle en [docs/07](docs/07-learner-lab.md).
+
+### 4.8 Cómo se construyó con Claude Code
+
+El proyecto se hizo tarea por tarea con los skills de `agent-skills` (detalle en [docs/06](docs/06-skills-de-ejecucion.md)):
+
+| Momento | Skill |
+|---|---|
+| Plan de tareas con criterios de aceptación | `/agent-skills:plan` → [tasks/plan.md](tasks/plan.md) y [tasks/todo.md](tasks/todo.md) |
+| Cada tarea (prueba que falla, código, verificación, commit) | `/agent-skills:build Tarea N del plan (...)`; el prompt de ejemplo está en la Tarea 15 del plan |
+| Reglas con TDD (links, postscan, autorización) | `/agent-skills:test` |
+| Pantallas de Angular | `frontend-design:frontend-design` |
+| Revisión de código y de seguridad | `/agent-skills:review` y `/agent-skills:security-and-hardening` (Tarea 17, pendiente) |
+| Cierre: go/no-go | `/agent-skills:ship` (resultado en la Tarea 19 del plan) |
 
 ## 5. Estructura del repo
 
@@ -133,7 +216,7 @@ medical-history-capstone-project/
 ├── tests/load/   # k6 y scripts de datos de la prueba de carga
 ├── docs/         # especificación (00 a 07)
 ├── tasks/        # plan, lista de tareas e informes de pruebas
-├── diagramas/
+├── diagramas/    # medical-historyv2.drawio y .png
 └── README.md
 ```
 

@@ -12,10 +12,10 @@ frontend/src/app/
 │   └── config.ts        # lee /config.json (public/config.json: apiUrl, userPoolId, clientId, region)
 ├── features/
 │   ├── auth/            # registro, confirmar código, login
+│   ├── perfil.ts        # /perfil: primer registro (POST) o edición (PUT)
 │   ├── folders/         # carpetas por especialidad + listado de archivos
 │   ├── upload/          # subida directa a S3 con progreso (en partes: pendiente, Tarea 11b)
-│   └── share/           # crear link, lista de links, switch on/off
-└── shared/              # componentes UI, pipes
+│   └── share/           # selección, crear link, lista de links con switch; public-view/: /compartido/:token
 ```
 
 La config va en `public/config.json` (en el sitio publicado, `apiUrl` sale del export de `mh-api`), no compilada, para usar el mismo build en cualquier entorno.
@@ -32,7 +32,7 @@ La config va en `public/config.json` (en el sitio publicado, `apiUrl` sale del e
 | `/login`, `/registro`, `/confirmar` | público | Formularios reactivos |
 | `/perfil` | auth | Datos del perfil |
 | `/carpetas` | auth | Lista fija de especialidades (constante compartida con el backend, ver [04](04-modelo-datos-api.md)); el total por carpeta se calcula con `GET /files` |
-| `/carpetas/:nombre` | auth | Archivos, estado (Pendiente / Limpio / Infectado), descargar, eliminar, compartir |
+| `/carpetas/:nombre` | auth | Archivos, estado (Pendiente / Limpio / Rechazado / Subida vencida; Infectado en la versión objetivo), descargar, eliminar, compartir |
 | `/subir` | auth | Selección de carpeta + archivo, barra de progreso |
 | `/links` | auth | Links activos con switch, expiración, archivos incluidos y copiar URL |
 | `/compartido/:token` | público | Vista de los archivos compartidos y descarga |
@@ -45,9 +45,9 @@ La config va en `public/config.json` (en el sitio publicado, `apiUrl` sale del e
 
 ## Compartir (`features/share`)
 - Selección múltiple: casillas en el listado de archivos (también "seleccionar toda la carpeta"), hasta 50 archivos, solo los `CLEAN` son seleccionables.
-- Elegir duración (15 min, 1 h, 2 h, 24 h) → `POST /links` con `fileIds`.
+- Elegir duración (15 min, 1 h, 2 h, 24 h) y permiso (Ver y descargar, Solo ver, Solo descargar) → `POST /links` con `fileIds` y `permiso`.
 - Mostrar la URL `https://<dominio>/compartido/<token>` con botón copiar. El switch llama `PATCH /links/{token}`.
-- Pantalla pública `/compartido/:token` (sin guard, sin interceptor de token): lista los archivos del link con su tamaño y un botón de descarga por archivo (cada uno abre `/api/s/{token}/files/{fileId}`), y muestra "enlace no disponible" ante un 410.
+- Pantalla pública `/compartido/:token` (sin guard, sin interceptor de token): lista los archivos del link con su tamaño y, según el permiso, los enlaces Ver (otra pestaña, `?modo=ver`) y Descargar por archivo (cada uno navega a `{apiUrl}/s/{token}/files/{fileId}`; `/api/s/...` en la versión objetivo), y muestra "Enlace no disponible" ante un 410.
 
 ## Despliegue
 **PoC (Learner Lab, Tarea 16):** `node infra/publish-front.mjs` (sirve en PowerShell y en Git Bash, con las credenciales del lab en el entorno). Hace `ng build`, escribe en el `dist` un `config.json` con `apiUrl` = export `mh-api-ApiUrl` y sube al bucket del stack `mh-edge` (sitio estático de S3, `http://mh-front-<account>.s3-website-us-east-1.amazonaws.com`) en tres `aws s3 sync`: `.js`/`.css` (con hash) con `Cache-Control: public, max-age=31536000, immutable`; el resto (`index.html`, `config.json`, favicon) con `no-cache`; y al final `--delete`, para no borrar los chunks viejos antes de que el `index.html` nuevo esté arriba. Antes del build actualiza `public/config.json` (`userPoolId`, `clientId`) y el `target` de `proxy.conf.json` con los exports de `mh-auth` y `mh-api`, porque redesplegar desde cero cambia esos ids.

@@ -21,8 +21,8 @@ Los stacks se comunican por `Outputs` + `Export` (`mh-base-DocsBucketArn`, etc.)
 - **DynamoDB**: `mh-profiles`, `mh-files`, `mh-links` (esquemas en [04](04-modelo-datos-api.md); `mh-files` lleva el LSI `byCarpeta`, que solo se puede definir al crear la tabla), `PAY_PER_REQUEST`, SSE con la CMK, PITR ON, TTL en `mh-links.expiresAt`.
 
 ### `mh-auth` (`infra/auth.yaml`)
-- User Pool: login por email, verificación por código, política de contraseña razonable, MFA opcional.
-- App Client público (sin secreto) para Angular, flujo `USER_SRP_AUTH`, tokens: access 1 h, refresh 30 d.
+- User Pool `mh-users`: login por email, verificación por código, contraseña de 8 caracteres con mayúsculas, minúsculas y números, MFA opcional (TOTP), errores que no revelan si el usuario existe.
+- App Client público `mh-web` (sin secreto) para Angular, flujo `USER_SRP_AUTH`, tokens: ID y access 1 h, refresh 30 d.
 - Atributos estándar solamente (email); el resto del perfil va en DynamoDB.
 - El front envía el **ID token** (trae `email`; el access token no) y el authorizer de API Gateway se configura sin scopes.
 - Outputs: `UserPoolId`, `UserPoolClientId`, `UserPoolArn`.
@@ -36,6 +36,9 @@ Los stacks se comunican por `Outputs` + `Export` (`mh-base-DocsBucketArn`, etc.)
 - **EventBridge rule**: evento `GuardDuty Malware Protection Object Scan Result` → Lambda `mh-postscan` (el target se conecta en `mh-api`, la regla puede vivir allí).
 
 ### `mh-api` (`infra/api.yaml`, con SAM `Transform` si se prefiere)
+**PoC en el Learner Lab (lo implementado):** template SAM con las 4 Lambdas (un solo jar sombreado, `mh-lambda.jar`, con un handler por función), todas con `LabRole` (sin rol por Lambda); rutas sin prefijo `/api`; sin WAF regional (throttling del stage: 10 req/s, ráfaga 20); CORS con un solo origen, la URL del sitio importada de `mh-edge`; la regla de EventBridge `Object Created` del bucket de documentos dispara `mh-postscan`. Access logs y log groups como abajo.
+
+**Versión objetivo:**
 - 4 Lambdas Java 21 (`mh-profile`, `mh-files`, `mh-links`, `mh-postscan`), `SnapStart: ApplyOn: PublishedVersions`, `AutoPublishAlias: live`, 1024 MB, timeout 15 s (postscan 60 s).
 - Un rol IAM por Lambda con solo lo necesario:
   - profile: `dynamodb:GetItem/PutItem/UpdateItem` en `mh-profiles`, `kms:Encrypt/Decrypt/GenerateDataKey`.

@@ -18,10 +18,10 @@
 
 ## Qué necesito de ti
 
-- Cuenta AWS con permisos de administrador para el despliegue inicial y un perfil CLI (`aws configure sso` o claves).
+- Cuenta AWS con permisos de administrador para el despliegue inicial y un perfil CLI (`aws configure sso` o claves). En la PoC: AWS Academy Learner Lab con credenciales temporales (ver [README](../README.md), sección 4).
 - Un dominio (Route 53 o delegable). Sin dominio se usa el dominio `*.cloudfront.net` y se salta Route 53/ACM.
-- Instalado: Java 21, Maven, Node 20+, Angular CLI, AWS CLI v2, SAM CLI (solo para pruebas locales), `cfn-lint`.
-- Decisión pendiente: si el correo del usuario se verifica con código (Cognito por defecto) o se permite registro sin verificar en la PoC.
+- Instalado: Java 21, Maven, Node 20+, AWS CLI v2, `cfn-lint` y Git Bash (Angular CLI va con `npx`; SAM CLI no se usó). Versiones e instalación en el [README](../README.md).
+- Verificación del correo: con código de Cognito (decidido; la PoC lo usa).
 
 ## Fases
 

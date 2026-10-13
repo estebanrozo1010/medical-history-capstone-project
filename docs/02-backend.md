@@ -10,12 +10,12 @@ backend/
 ├── domain/                      # entidades y reglas puras (sin AWS)
 ├── application/                 # casos de uso + puertos (interfaces)
 ├── adapter-in-lambda/           # handlers: profile, files, links, postscan
-├── adapter-out-dynamodb/        # repositorios (AWS SDK v2 enhanced client)
+├── adapter-out-dynamodb/        # repositorios (AWS SDK v2, DynamoDbClient con AttributeValue)
 ├── adapter-out-s3/              # presigner, multipart, tags, delete de versiones
 └── adapter-out-kms/             # cifrado de campos sensibles
 ```
 
-Reglas: `domain` y `application` no dependen del SDK de AWS; los adapters implementan los puertos. Cada Lambda se empaqueta como jar sombreado (maven-shade) con solo los módulos que usa. Clientes AWS SDK v2 con `UrlConnectionHttpClient` (más ligero que Apache/Netty) creados como campos estáticos del handler (se capturan en el snapshot).
+Reglas: `domain` y `application` no dependen del SDK de AWS; los adapters implementan los puertos. Las 4 Lambdas comparten un jar sombreado (maven-shade, `adapter-in-lambda/target/mh-lambda.jar`) y cada una apunta a su handler. Clientes AWS SDK v2 con `UrlConnectionHttpClient` (más ligero que Apache/Netty) creados en el constructor del handler, que corre en el init: se capturan en el snapshot.
 
 ## Casos de uso por Lambda
 
@@ -26,7 +26,7 @@ Reglas: `domain` y `application` no dependen del SDK de AWS; los adapters implem
 ### `mh-files`
 - `ListarArchivos(carpeta?)`: sin carpeta, `Query` por `userSub`; con carpeta, `Query` sobre el LSI `byCarpeta`. Calcula el estado efectivo (`PENDING` de más de 1 h → `UPLOAD_EXPIRED`).
 - `SolicitarSubida`: valida carpeta (lista fija de [04](04-modelo-datos-api.md)), tipo MIME (PDF, JPEG/PNG, MP4) y tamaño máximo; crea registro `PENDING` con `fileId` UUID; devuelve presigned PUT (expira 10 min) con `Content-Type`, `Content-Length` e `If-None-Match: *` firmados. Clave S3: `{userSub}/{fileId}`. `If-None-Match` impide reutilizar la URL vigente para reemplazar un archivo ya escaneado (S3 responde 412); si se reutiliza tras un rechazo (el objeto ya se borró), `mh-postscan` lo vuelve a borrar.
-  *Límite conocido:* una URL firmada de PUT no fija un tope de tamaño por sí sola. Defensa en dos capas: (1) `Content-Length` firmado (verificar al implementar que S3 rechaza otro valor); (2) `mh-postscan` compara el tamaño real (`HeadObject`) con el declarado y, si no coincide, borra el objeto y marca `SCAN_FAILED`.
+  *Límite conocido:* una URL firmada de PUT no fija un tope de tamaño por sí sola. En la PoC basta el `Content-Length` firmado: S3 rechaza otro valor con 403 (probado en el spike), así que `mh-postscan` no compara tamaños. En la versión objetivo se agrega la segunda capa: `mh-postscan` compara el tamaño real (`HeadObject`) con el declarado y, si no coincide, borra el objeto y marca `SCAN_FAILED`.
 - Multipart (archivos > 100 MB): `start` → URL por parte → `complete` (el cliente envía los ETag). `start` valida igual que `SolicitarSubida` y crea el registro `PENDING` antes de `CreateMultipartUpload` (con el `contentType` declarado); partes de 16 MB. Cada URL de `UploadPart` (10 min) firma el `Content-Length` exacto de su parte (16 MB, la última el resto), así la suma no puede pasar del tamaño declarado; `partNumber` de 1 a `ceil(size/16 MB)`. `complete` exige las `n` partes en orden y usa `If-None-Match: *` (no reemplaza un archivo ya escaneado). Las cuatro operaciones exigen el estado **guardado** `PENDING` (no el efectivo: un video grande puede tardar más de 1 h) y si no, 409. El `uploadId` no se guarda: la clave siempre se arma en el servidor como `{sub}/{fileId}` y S3 rechaza (`NoSuchUpload`, 404) un `uploadId` que no es de esa clave. `abort` es idempotente y deja el registro `PENDING` (pasa a `UPLOAD_EXPIRED`, como una subida simple fallida). El lifecycle del bucket aborta multiparts abandonados a los 7 días.
 - `UrlDescarga`: solo si `status = CLEAN` (si no, 409); presigned GET de 5 min con `response-content-disposition: attachment; filename="<nombre ASCII>"; filename*=UTF-8''<nombre codificado>` (RFC 6266/5987: el navegador usa `filename*` con tildes y ñ; el respaldo ASCII quita tildes y cambia comillas, `\` y lo demás por `_`).
 - `EliminarArchivo`: si el registro está `PENDING`, primero aborta las subidas en partes en curso de la clave (`ListMultipartUploads` con el prefijo; así las partes de un archivo eliminado no quedan 7 días); después borra **todas las versiones** del objeto (`ListObjectVersions` + `DeleteObjectVersion`) en el bucket de documentos y en el de respaldo, y luego el registro; funciona en cualquier estado (sin objeto no falla). Usa la misma espera a la réplica que `mh-postscan`, pero de 8 s (timeout de 15 s y API Gateway corta a 29 s): si la versión sigue `PENDING`, no borra nada y responde 409 "reintenta" (solo pasa al borrar justo después de subir; para un `CLEAN` la réplica ya terminó). Medido con un video de 200 MB en multipart: `CLEAN` a los 8 s y réplica `COMPLETED` a los 17 s del `complete` (dentro de los 40 s de `mh-postscan`). Los links que lo incluían dejan de mostrarlo (se filtra al resolver). Nota: Glacier cobra el mínimo de permanencia aunque se borre antes.
@@ -66,6 +66,9 @@ Reglas: `domain` y `application` no dependen del SDK de AWS; los adapters implem
 - Log JSON estructurado; nunca registrar cédula, fecha de nacimiento ni tokens completos.
 
 ## Criterios de aceptación
+
+Estado en la PoC: `mvn verify` pasa con 166 tests; no hay JaCoCo, así que la cobertura no está medida. Los tests de links, postscan y autorización existen con los estados de la PoC (`REJECTED` en lugar de `INFECTED`/`SCAN_FAILED`). Cold start de `mh-links` con SnapStart: 0,6 a 1,3 s (Tarea 18).
+
 - `mvn verify` pasa; cobertura de `domain` y `application` ≥ 80 %.
 - Tests de `ResolverLink`: activo, apagado, vencido, inexistente, con archivos mezclados (uno `CLEAN`, uno `INFECTED`, uno eliminado). Tests de `DescargarDeLink`: `fileId` que no pertenece al link devuelve 404.
 - Tests de `mh-postscan`: tamaño real distinto del declarado → `SCAN_FAILED`; `THREATS_FOUND` borra versiones en ambos buckets.

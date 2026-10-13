@@ -4,6 +4,8 @@ Nombres y rutas según [00](00-plan-general.md) y [04](04-modelo-datos-api.md).
 
 ## Checklist de seguridad (revisión final con Opus 5.5)
 
+Las casillas se marcan en la Tarea 17 (pendiente). Los puntos de perímetro, roles por Lambda y GuardDuty son de la versión objetivo; en la PoC se justifican con [07](07-learner-lab.md). Hallazgos del `/agent-skills:ship` (sin Critical ni High) en la Tarea 19 de [tasks/plan.md](../tasks/plan.md).
+
 **Datos**
 - [ ] Todos los buckets: Block Public Access, SSE-KMS, TLS obligatorio, versionado en docs.
 - [ ] DynamoDB cifrada con la CMK; cédula y fecha de nacimiento cifradas además a nivel de campo (con encryption context).
@@ -42,17 +44,17 @@ Nombres y rutas según [00](00-plan-general.md) y [04](04-modelo-datos-api.md).
 
 ### Backend
 - **Unitarias** (`domain`, `application`): JUnit 5 + Mockito con puertos falsos. Casos obligatorios: validación de perfil, reglas de subida (carpeta, tipo, tamaño), `ResolverLink` (activo / apagado / vencido / inexistente / archivos mezclados), propiedad de recursos.
-- **Adaptadores**: Testcontainers + LocalStack (DynamoDB, S3, KMS) para repositorios y presigner.
+- **Adaptadores**: Testcontainers + LocalStack (DynamoDB, S3, KMS) para repositorios y presigner. En la PoC no se usó: los adaptadores se probaron con el SDK simulado (S3 y `obtenerVarios` de DynamoDB) y con curl contra AWS; `KmsCifrador` y los repositorios de perfil y links no tienen tests propios.
 - **Handlers**: eventos de API Gateway de ejemplo contra el handler (`sam local invoke` opcional).
-- **Postscan**: eventos de GuardDuty simulados para `NO_THREATS_FOUND`, `THREATS_FOUND`, `FAILED`, tamaño distinto del declarado y reenvío duplicado.
+- **Postscan**: eventos de GuardDuty simulados para `NO_THREATS_FOUND`, `THREATS_FOUND`, `FAILED`, tamaño distinto del declarado y reenvío duplicado. En la PoC: eventos `Object Created` simulados (firma correcta → `CLEAN`, otra → `REJECTED`, reenvío, clave ajena y objeto sin registro).
 
 ### Frontend
-- `ng test` (Jasmine/Karma o Jest): `AuthService`, interceptor (añade ID token, refresca ante 401), servicio de subida (partes y progreso), formularios.
+- `ng test` (Vitest en la PoC, 93 tests): `AuthService`, interceptor (añade ID token, refresca ante 401), servicio de subida (partes y progreso; las partes quedan para la Tarea 11b), formularios.
 - E2E (Playwright, opcional en la PoC): flujo feliz completo contra el entorno `dev`.
 
 ### Infra
 - `cfn-lint` en cada template; despliegue y borrado completo en una cuenta de pruebas.
-- Prueba post-despliegue (script): crear usuario → subir archivo EICAR (cadena de prueba antivirus estándar) → esperar `INFECTED` → confirmar que no se puede descargar y que no queda ninguna versión en el respaldo.
+- Prueba post-despliegue (script): crear usuario → subir archivo EICAR (cadena de prueba antivirus estándar) → esperar `INFECTED` → confirmar que no se puede descargar y que no queda ninguna versión en el respaldo. En la PoC el EICAR como `.pdf` queda `REJECTED` y sin versiones (Tarea 9, con curl). Borrado: `infra/teardown.sh`, probado por partes; el borrado y redespliegue completos están pendientes (Tarea 19).
 
 ### Carga (fase 7)
 - Herramienta: k6 o Artillery.
