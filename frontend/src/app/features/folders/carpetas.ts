@@ -2,11 +2,12 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { Archivo, CARPETAS, FilesApi } from '../../core/api/files.api';
+import { Compartir } from '../share/compartir';
 
 /** Especialidades con su total de archivos, calculado con un solo GET /files (docs/04). */
 @Component({
   selector: 'app-carpetas',
-  imports: [RouterLink],
+  imports: [RouterLink, Compartir],
   template: `
     <h1>Mis carpetas</h1>
     @switch (estado()) {
@@ -27,6 +28,7 @@ import { Archivo, CARPETAS, FilesApi } from '../../core/api/files.api';
         </ul>
       }
     }
+    <app-compartir />
     <p><a routerLink="/subir">Subir un archivo</a></p>
   `,
 })

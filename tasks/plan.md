@@ -252,9 +252,12 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 #### Tarea 14: Compartir desde la app
 **Descripción:** Selección múltiple en el listado (hasta 50, solo `CLEAN`), elegir duración, crear link, copiar URL; pantalla `/links` con switch y expiración.
 **Criterios de aceptación:**
-- [ ] Se crea un link con 2 archivos y se copia `https://<dominio>/compartido/<token>`
-- [ ] El switch apaga el link y la lista se actualiza
+- [x] Se crea un link con 2 archivos y se copia `https://<dominio>/compartido/<token>`
+- [x] El switch apaga el link y la lista se actualiza
 **Verificación:** `ng test --watch=false`; flujo manual.
+**Prueba real (2026-10-12):** `ng serve` contra la API real con un usuario existente: `prueba-9a.pdf` (Laboratorio) + un PDF de Cardiología elegidos en dos carpetas → `POST /links` 201; la URL `http://localhost:4200/compartido/{token}` llegó al portapapeles (Clipboard API en localhost); `GET /s/{token}` sin `Authorization` → 200 con los 2; el link aparece primero en `/links`; switch → `PATCH` 200, aviso `role=status`, `GET /s/{token}` → 410 `NO_DISPONIBLE` y sigue apagado al recargar. Sin errores en consola. `ng test` (79) y `ng build` sin warnings.
+**Decisiones de la 14:** selección entre carpetas en un servicio raíz (`Seleccion`, `linkedSignal` sobre `auth.email` para vaciarla al cambiar de usuario, porque `logout` no recarga) con el bloque `app-compartir` en `/carpetas` y `/carpetas/:nombre`; navegar por URL (recargar) pierde la selección. Duraciones de docs/03. `CopiarUrl`: Clipboard API, si no (el sitio HTTP de la Tarea 16 no es contexto seguro) `execCommand('copy')` sobre el texto seleccionado, y si no, aviso para Ctrl+C. Lectura eventual: `LinksApi` recuerda los creados en la sesión y `listar()` los antepone hasta que `GET /links` los traiga. En `/links` la URL se arma con `location.origin` (igual a `ALLOWED_ORIGIN` mientras el front se sirva desde ese origen), porque `GET /links` no devuelve `url`.
+**Pendiente para la Tarea 16:** probar Copiar en el sitio HTTP de S3 (solo probado en tests el camino de `execCommand`).
 **Dependencias:** Tarea 12 (puede avanzar antes con mock)
 **Archivos probables:** `frontend/src/app/features/share/*`, `core/api/links.api.ts`
 **Alcance:** M

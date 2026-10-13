@@ -32,6 +32,6 @@ describe('App', () => {
     email.set('a@b.co');
     await fixture.whenStable();
     const enlaces = [...el.querySelectorAll('nav a')].map((a) => a.getAttribute('href'));
-    expect(enlaces).toEqual(['/carpetas', '/subir', '/perfil']);
+    expect(enlaces).toEqual(['/carpetas', '/subir', '/links', '/perfil']);
   });
 });

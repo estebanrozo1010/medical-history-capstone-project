@@ -28,3 +28,13 @@ a { color: var(--primario); }
 .estado-CLEAN { background: #e6f4ea; color: var(--exito); }
 .estado-INFECTED, .estado-REJECTED, .estado-SCAN_FAILED, .estado-UPLOAD_EXPIRED { background: #fdecee; color: var(--error); }
 progress { width: 100%; height: 1rem; }
+input[type=checkbox] { width: auto; margin: 0 .5rem 0 0; accent-color: var(--primario); }
+.casilla { display: flex; align-items: center; font-weight: normal; }
+.casilla label { display: inline; font-weight: normal; margin: 0; }
+.compartir { margin: 1rem 0; padding: 1rem; border: 1px solid var(--borde); border-radius: .25rem; }
+.compartir h2 { margin-top: 0; font-size: 1.25rem; }
+.copiar { display: flex; gap: .5rem; }
+.copiar input { flex: 1; min-width: 0; }
+.copiar button { flex: none; margin-right: 0; }
+app-copiar-url { display: block; flex: 1 1 100%; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

@@ -9,5 +9,6 @@ export const routes: Routes = [
   { path: 'carpetas', canActivate: [authGuard], loadComponent: () => import('./features/folders/carpetas').then((m) => m.Carpetas) },
   { path: 'carpetas/:nombre', canActivate: [authGuard], loadComponent: () => import('./features/folders/carpeta').then((m) => m.Carpeta) },
   { path: 'subir', canActivate: [authGuard], loadComponent: () => import('./features/upload/subir').then((m) => m.Subir) },
+  { path: 'links', canActivate: [authGuard], loadComponent: () => import('./features/share/links').then((m) => m.Links) },
   { path: '**', redirectTo: 'perfil' },
 ];

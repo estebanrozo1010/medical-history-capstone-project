@@ -1,8 +1,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DOCUMENT, Injector, afterNextRender, inject, signal } from '@angular/core';
+import { Component, DOCUMENT, Injector, afterNextRender, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { Archivo, CARPETAS, FilesApi } from '../../core/api/files.api';
+import { Compartir } from '../share/compartir';
+import { Seleccion } from '../share/seleccion';
 
 export const ESTADOS: Record<Archivo['status'], string> = {
   PENDING: 'Pendiente',
@@ -27,10 +29,10 @@ const mensajeError = (e: unknown) => {
     : 'Ocurrió un error. Inténtalo de nuevo.';
 };
 
-/** Archivos de una carpeta: GET /files?carpeta= con el estado en español; descargar (solo CLEAN) y eliminar. */
+/** Archivos de una carpeta: GET /files?carpeta= con el estado en español; descargar y elegir para compartir (solo CLEAN), y eliminar. */
 @Component({
   selector: 'app-carpeta',
-  imports: [RouterLink],
+  imports: [RouterLink, Compartir],
   template: `
     @if (carpeta; as c) {
       <h1 id="titulo" tabindex="-1">{{ c.nombre }}</h1>
@@ -47,10 +49,22 @@ const mensajeError = (e: unknown) => {
         }
         @default {
           @if (archivos().length) {
+            @if (limpios().length) {
+              <p class="casilla">
+                <input type="checkbox" id="todos-limpios" [checked]="todosElegidos()" (change)="elegirTodos($any($event.target).checked)" />
+                <label for="todos-limpios">Seleccionar todos los limpios para compartir</label>
+              </p>
+            }
             <ul class="lista">
               @for (a of archivos(); track a.fileId) {
                 <li>
-                  <span class="nombre">{{ a.nombre }}</span>
+                  <span class="nombre">
+                    @if (a.status === 'CLEAN') {
+                      <input type="checkbox" [attr.aria-label]="'Seleccionar ' + a.nombre" [checked]="seleccion.tiene(a.fileId)"
+                        [disabled]="!seleccion.tiene(a.fileId) && seleccion.llena()" (change)="seleccion.alternar(a)" />
+                    }
+                    {{ a.nombre }}
+                  </span>
                   <span class="ayuda">{{ tamano(a.size) }} · {{ fecha(a.createdAt) }}</span>
                   <span [class]="'estado estado-' + a.status">{{ estados[a.status] ?? a.status }}</span>
                   <span class="acciones">
@@ -75,6 +89,7 @@ const mensajeError = (e: unknown) => {
           }
         }
       }
+      <app-compartir />
       <p><a routerLink="/subir" [queryParams]="{ carpeta: c.id }">Subir a esta carpeta</a></p>
     } @else {
       <h1>Carpeta no encontrada</h1>
@@ -89,6 +104,9 @@ export class Carpeta {
   protected readonly carpeta = CARPETAS.find((c) => c.id === inject(ActivatedRoute).snapshot.paramMap.get('nombre'));
   protected readonly estado = signal<'cargando' | 'error' | 'listo'>('cargando');
   protected readonly archivos = signal<Archivo[]>([]);
+  protected readonly seleccion = inject(Seleccion);
+  protected readonly limpios = computed(() => this.archivos().filter((a) => a.status === 'CLEAN'));
+  protected readonly todosElegidos = computed(() => this.limpios().every((a) => this.seleccion.tiene(a.fileId)));
   protected readonly confirmando = signal<string | null>(null);
   protected readonly ocupado = signal(false);
   protected readonly aviso = signal('');
@@ -113,6 +131,12 @@ export class Carpeta {
     await this.operar(async () => this.abrir((await firstValueFrom(this.api.urlDescarga(a.fileId))).url));
   }
 
+  /** Solo afecta a los limpios de esta carpeta; lo elegido en otras se conserva. */
+  protected elegirTodos(marcar: boolean) {
+    if (marcar) this.seleccion.agregar(this.limpios());
+    else this.seleccion.quitar(this.limpios().map((a) => a.fileId));
+  }
+
   /** Primer clic: pide confirmación con el foco en Cancelar (la acción menos destructiva). */
   protected confirmar(a: Archivo) {
     this.confirmando.set(a.fileId);
@@ -128,6 +152,7 @@ export class Carpeta {
     await this.operar(async () => {
       await firstValueFrom(this.api.eliminar(a.fileId), { defaultValue: null });
       this.archivos.update((l) => l.filter((x) => x.fileId !== a.fileId));
+      this.seleccion.quitar([a.fileId]);
       this.confirmando.set(null);
       this.aviso.set(`Se eliminó «${a.nombre}».`);
       // Su botón ya no existe: el foco vuelve al título de la carpeta
