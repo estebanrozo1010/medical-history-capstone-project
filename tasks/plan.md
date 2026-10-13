@@ -228,15 +228,21 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 **Alcance:** M
 
 #### Tarea 13: Resolver link y descargar desde el link (backend público)
-**Descripción:** `GET /api/s/{token}` (lista los archivos `CLEAN` con `BatchGetItem`) y `GET /api/s/{token}/files/{fileId}` (302 a URL firmada de 1 a 5 min). Rutas sin authorizer.
+**Descripción:** `GET /s/{token}` (lista los archivos `CLEAN` con `BatchGetItem`) y `GET /s/{token}/files/{fileId}` (302 a URL firmada de 1 a 5 min). Rutas sin authorizer, en `mh-links` (en la PoC no hay prefijo `/api`).
 **Criterios de aceptación:**
 - [ ] Link activo y vigente lista sus archivos; apagado, vencido o inexistente responde 410 igual
 - [ ] `expiresAt` se valida en código (no depende del TTL de DynamoDB)
 - [ ] Un `fileId` que no está en el link responde 404
-- [ ] Archivo infectado o eliminado desaparece de la lista
+- [ ] Archivo rechazado o eliminado desaparece de la lista (en la PoC `REJECTED`; `INFECTED` es de la versión objetivo)
 **Verificación:** tests de `ResolverLink` y `DescargarDeLink` (activo, apagado, vencido, inexistente, mezclados); prueba con `curl` sin token.
 **Dependencias:** Tarea 12
-**Archivos probables:** `backend/application/links/*`, `backend/adapter-in-lambda/LinksHandler`, `infra/api.yaml`
+**Archivos probables:** `LinkServicio` (o un servicio público aparte) en `application`, método nuevo en `ArchivoRepositorio` y `DynamoArchivoRepositorio`, `LinksHandler`, `infra/api.yaml`
+**Pendiente que deja la Tarea 12:**
+- Método para leer varios archivos con `BatchGetItem` (`userSub` del link + `fileIds`, hasta 50 claves; reintentar `UnprocessedKeys`) y actualizar los 2 fakes de `ArchivoRepositorio` en los tests. La 12 usa un `Query` de todos los archivos del usuario (comentario `shortcut:` en `LinkServicio`).
+- `Auth: {Authorizer: NONE}` en los 2 eventos públicos de `mh-links`; CORS para que la pantalla pública llame a `GET /s/{token}` (la descarga es navegación con 302, no necesita CORS).
+- Firmar la descarga desde `mh-links`: `S3Presigner` + `DOCS_BUCKET` en `api.yaml`, reutilizando `AlmacenDeArchivos.urlDescarga` y `ArchivoServicio.disposicion`; respuesta 302 con `Location`. Agregar la firma al priming.
+- Log con solo los 6 primeros caracteres del token (como en la 12). El access log usa `$context.resourcePath` (`/s/{token}`), así que no registra el token.
+- Datos de prueba: `prueba-12-b.pdf` (`CLEAN`) en la cuenta de B; links de A creados con `POST /links`.
 **Alcance:** M
 
 #### Tarea 14: Compartir desde la app
