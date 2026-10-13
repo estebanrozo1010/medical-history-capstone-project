@@ -345,9 +345,12 @@ Notas del entorno: en este equipo (Git Bash) los heredocs largos fallan; crea lo
 #### Tarea 18: Pruebas de carga
 **Descripción:** Escenarios 1 y 2 de [docs/05](../docs/05-seguridad-y-pruebas.md) con k6 o Artillery, y medición de cold starts.
 **Criterios de aceptación:**
-- [ ] p95 menor a 500 ms y 0 errores 5xx en URLs firmadas
-- [ ] Link de 50 archivos responde dentro del objetivo; el límite de tasa responde 4xx, no 5xx
+- [x] p95 menor a 500 ms y 0 errores 5xx en URLs firmadas (481 `upload-url` a 8 req/s: p95 280 ms, 0 de 5xx y 0 de 429)
+- [x] Link de 50 archivos responde dentro del objetivo; el límite de tasa responde 4xx, no 5xx (listado de 50: p95 268 ms; ráfaga de 30 req/s → 262 de 429 y 0 de 5xx)
 **Verificación:** informe de la herramienta guardado en `tasks/`.
+**Prueba real (2026-10-13, 11:35–11:48 UTC):** informe en [carga-tarea-18.md](carga-tarea-18.md), con la salida de k6 en `carga-tarea-18-e1/e2.txt|json`. k6 v2.3.0 (zip, sin admin). Lo medido va a 8 req/s fijos para quedar bajo el throttling del stage (10/20); el exceso se probó con una ráfaga aparte. Escenario 2: 1 440 peticiones con 200, 302 y 410 correctos, p95 264 ms. Cold starts de las 4 Lambdas entre 0,5 y 1,3 s en Lambda (`mh-profile` 1,2–1,5 s de punta a punta). CloudWatch: 0 `5XXError`, 0 `Errors` y 0 `Throttles` de Lambda, máximo 5 ejecuciones simultáneas. Datos: 50 PDF falsos y 4 links de una cuenta de prueba; `datos.mjs limpiar` borró los 531 archivos creados. Costo estimado menor a 0,05 USD; Budgets todavía no lo refleja (se actualiza cada 8 a 12 h). Sin bugs y sin cambios en el backend.
+**Decisiones de la 18:** k6 en vez de Artillery (un solo `.exe`, `constant-arrival-rate`, `maxRedirects: 0` para medir el 302 sin bajar de S3). Los usuarios virtuales comparten un token. Setup y limpieza en Node (`tests/load/datos.mjs`, como `id-token.mjs`) a ~4 req/s, reintentando 429 y el 409 de la réplica. Los tokens de los links quedan en `%TEMP%\mh-carga.json`, fuera del repo. La limpieza borra solo `carga-t18-*` de `otros`. Cold start forzado con 5 peticiones simultáneas por Lambda, leyendo `Restore Duration` de los `REPORT`.
+**Para repetirla (PowerShell, con el token en `%TEMP%\mh-token.txt` y las credenciales del lab):** `node tests/load/datos.mjs preparar`; `node tests/load/cold-start.mjs 6`; `k6 run --summary-export tasks/carga-tarea-18-e1.json tests/load/escenario1.js`; lo mismo con `escenario2.js`; `node tests/load/datos.mjs limpiar`.
 **Dependencias:** Tarea 16
 **Archivos probables:** `tests/load/*`
 **Alcance:** S

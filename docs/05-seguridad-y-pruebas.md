@@ -61,6 +61,13 @@ Nombres y rutas según [00](00-plan-general.md) y [04](04-modelo-datos-api.md).
 - Medir cold starts de las 4 Lambdas con SnapStart y ajustar memoria.
 - Vigilar el costo durante la prueba (Budgets) y no usar datos reales.
 
+**Resultado en la PoC (Learner Lab, 2026-10-13, k6, informe en [tasks/carga-tarea-18.md](../tasks/carga-tarea-18.md)):** el stage tiene throttling de 10 req/s con ráfaga de 20 y Lambda admite 10 ejecuciones simultáneas. Por eso lo medido va a 8 req/s fijos y el exceso se prueba aparte con una ráfaga de 30 req/s durante 20 s. Scripts en [tests/load/](../tests/load/).
+- Escenario 1: 481 `POST /files/upload-url` → todos 201, p50 140 ms, **p95 280 ms**, p99 301 ms, 0 de 5xx y 0 de 429.
+- Escenario 2: 1 440 peticiones de mezcla → 200, 302 y 410 correctos en todos los casos, p95 264 ms. **Listado de 50 archivos: p95 268 ms** (p99 291 ms). Ráfaga: 262 de 601 → 429 del throttling y el resto 410, **0 de 5xx**.
+- Cold start con SnapStart (1024 MB), restore + primera ejecución: `mh-profile` 0,63–0,90 s (1,2–1,5 s de punta a punta), `mh-files` 0,48–0,86 s, `mh-links` 0,60–1,31 s, `mh-postscan` 1,06–1,22 s. No hace falta subir la memoria.
+- CloudWatch: 0 `5XXError` en API Gateway; 0 `Errors` y 0 `Throttles` en las 4 Lambdas; un máximo de 5 ejecuciones simultáneas. Costo estimado menor a 0,05 USD.
+- El throttling es global, no por IP: la ráfaga deja la API en 429 para todos durante 20 s. La versión objetivo lo resuelve con el WAF `rate-based` por IP.
+
 ## Criterios de aceptación por fase
 | Fase | Se acepta cuando |
 |---|---|

@@ -53,7 +53,7 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 - [x] Tarea 16: Publicación del frontend en S3 y borde (M) — stack `mh-edge` (sitio estático de S3, `ErrorDocument` a `index.html`, solo `s3:GetObject` público) que exporta `mh-edge-SiteUrl`; `mh-api` lo importa como único origen CORS y base de la URL compartida (sin Java); `ng serve` sin CORS gracias al proxy `/v1`; `node infra/publish-front.mjs` (build, `config.json` con la URL real, sync con caché larga en `.js`/`.css` y `no-cache` en el resto, `--delete` al final). Verificado con `curl` (rutas SPA 404 con `index.html`, cabeceras CORS, buckets de documentos privados) y `ng test` (93). Recorrido en el navegador probado por el usuario
 - [ ] Tarea 17: Revisión de seguridad y correcciones (M)
   - [ ] Pendiente de la 10a: si se elimina un archivo mientras `mh-postscan` lo escanea (ventana < 1 s), el `cambiarEstado` condicional falla (registro ya borrado) y el objeto queda sin registro. Arreglo posible: si `cambiarEstado` devuelve false y el registro ya no existe, borrar todas las versiones (como `HUERFANO_BORRADO`)
-- [ ] Tarea 18: Pruebas de carga (S)
+- [x] Tarea 18: Pruebas de carga (S) — k6 a 8 req/s fijos, bajo el throttling 10/20 del stage. E1: 481 `upload-url`, p95 280 ms, 0 de 5xx y 0 de 429. E2: links de 50 y de 1, apagado, vencido e inventado, 1 440 peticiones con 200, 302 y 410 correctos; listado de 50 con p95 268 ms; ráfaga de 30 req/s → 262 de 429 y 0 de 5xx. Cold start con SnapStart de las 4 Lambdas entre 0,5 y 1,3 s. CloudWatch: 0 5XX, 0 errores y 0 throttles de Lambda. Datos falsos, borrados al terminar. Informe en `tasks/carga-tarea-18.md`
 - [ ] Tarea 19: Cierre y entrega (S)
 
 ### Checkpoint final

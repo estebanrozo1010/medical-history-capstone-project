@@ -1,0 +1,92 @@
+
+
+  █ THRESHOLDS 
+
+    checks{scenario:mezcla}
+    ✓ 'rate==1' rate=100.00%
+
+    checks{scenario:rafaga}
+    ✓ 'rate==1' rate=100.00%
+
+    http_req_duration{caso:apagado}
+    ✓ 'p(95)<500' p(95)=249.14ms
+
+    http_req_duration{caso:descarga50}
+    ✓ 'p(95)<500' p(95)=262.83ms
+
+    http_req_duration{caso:inventado}
+    ✓ 'p(95)<500' p(95)=253.2ms
+
+    http_req_duration{caso:lista1}
+    ✓ 'p(95)<500' p(95)=257.82ms
+
+    http_req_duration{caso:lista50}
+    ✓ 'p(95)<500' p(95)=268.23ms
+
+    http_req_duration{caso:vencido}
+    ✓ 'p(95)<500' p(95)=253.47ms
+
+    http_req_duration{scenario:mezcla}
+    ✓ 'p(95)<500' p(95)=263.61ms
+
+    respuestas_429{scenario:mezcla}
+    ✓ 'count==0' count=0
+
+    respuestas_429{scenario:rafaga}
+    ✓ 'count>0' count=262
+
+    respuestas_5xx
+    ✓ 'count==0' count=0
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 3481    16.566559/s
+    checks_succeeded...: 100.00% 3481 out of 3481
+    checks_failed......: 0.00%   0 out of 3481
+
+    ✓ descarga50 -> 302
+    ✓ descarga50: cuerpo correcto
+    ✓ lista1 -> 200
+    ✓ lista1: cuerpo correcto
+    ✓ vencido -> 410
+    ✓ vencido: cuerpo correcto
+    ✓ lista50 -> 200
+    ✓ lista50: cuerpo correcto
+    ✓ inventado -> 410
+    ✓ inventado: cuerpo correcto
+    ✓ apagado -> 410
+    ✓ apagado: cuerpo correcto
+    ✓ rafaga -> 410 o 429
+
+    CUSTOM
+    respuestas_429.................: 262    1.246894/s
+      { scenario:mezcla }..........: 0      0/s
+      { scenario:rafaga }..........: 262    1.246894/s
+    respuestas_5xx.................: 0      0/s
+
+    HTTP
+    http_req_duration..............: min=71.71ms  med=122.42ms p(95)=261.68ms p(99)=277.23ms max=670.36ms avg=158.74ms
+      { caso:apagado }.............: min=99.13ms  med=114.57ms p(95)=249.14ms p(99)=253.74ms max=256.08ms avg=157.58ms
+      { caso:descarga50 }..........: min=102.66ms med=122.62ms p(95)=262.83ms p(99)=319.92ms max=430.72ms avg=168.77ms
+      { caso:inventado }...........: min=92.93ms  med=115.84ms p(95)=253.2ms  p(99)=257.58ms max=270.7ms  avg=165.26ms
+      { caso:lista1 }..............: min=103.86ms med=122.21ms p(95)=257.82ms p(99)=268.14ms max=373.5ms  avg=173.19ms
+      { caso:lista50 }.............: min=116.65ms med=131.13ms p(95)=268.23ms p(99)=291.42ms max=670.36ms avg=173.96ms
+      { caso:vencido }.............: min=95.58ms  med=114.86ms p(95)=253.47ms p(99)=295.62ms max=315.29ms avg=158.26ms
+      { expected_response:true }...: min=71.71ms  med=122.42ms p(95)=261.68ms p(99)=277.23ms max=670.36ms avg=158.74ms
+      { scenario:mezcla }..........: min=92.93ms  med=126.17ms p(95)=263.61ms p(99)=285.91ms max=670.36ms avg=168.42ms
+    http_req_failed................: 0.00%  0 out of 2041
+    http_reqs......................: 2041   9.713401/s
+
+    EXECUTION
+    iteration_duration.............: min=75.26ms  med=123.12ms p(95)=263.25ms p(99)=297.02ms max=822.8ms  avg=160.05ms
+    iterations.....................: 2041   9.713401/s
+    vus............................: 2      min=0         max=5 
+    vus_max........................: 50     min=50        max=50
+
+    NETWORK
+    data_received..................: 4.3 MB 20 kB/s
+    data_sent......................: 214 kB 1.0 kB/s
+
+
+
