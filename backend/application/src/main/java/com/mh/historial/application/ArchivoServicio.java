@@ -116,6 +116,11 @@ public class ArchivoServicio {
 
   /** RFC 6266: filename ASCII de respaldo (sin tildes; comillas, \ y lo demás a _) y filename* en UTF-8 (RFC 5987). */
   static String disposicion(String nombre) {
+    return disposicion("attachment", nombre);
+  }
+
+  /** tipo es attachment (descargar) o inline (verlo en el navegador); el nombre va igual en los dos. */
+  static String disposicion(String tipo, String nombre) {
     String ascii = Normalizer.normalize(nombre, Normalizer.Form.NFD).replaceAll("\\p{M}", "")
         .replaceAll("[^\\x20-\\x7E]|[\"\\\\]", "_");
     StringBuilder utf8 = new StringBuilder();
@@ -127,7 +132,7 @@ public class ArchivoServicio {
         utf8.append('%').append(String.format("%02X", b & 0xff));
       }
     }
-    return "attachment; filename=\"" + ascii + "\"; filename*=UTF-8''" + utf8;
+    return tipo + "; filename=\"" + ascii + "\"; filename*=UTF-8''" + utf8;
   }
 
   private ArchivoGuardado propio(String userSub, String fileId) {

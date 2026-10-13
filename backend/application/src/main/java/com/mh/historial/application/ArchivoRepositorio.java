@@ -13,6 +13,9 @@ public interface ArchivoRepositorio {
 
   Optional<ArchivoGuardado> obtener(String userSub, String fileId);
 
+  /** Los que existen de esos fileIds (hasta 100, BatchGetItem), en cualquier orden. */
+  List<ArchivoGuardado> obtenerVarios(String userSub, List<String> fileIds);
+
   /** Cambia el status solo si sigue siendo `de`; false si el registro no existe o ya cambió. */
   boolean cambiarEstado(String userSub, String fileId, String de, String a);
 

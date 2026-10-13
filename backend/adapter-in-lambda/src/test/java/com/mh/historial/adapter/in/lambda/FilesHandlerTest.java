@@ -348,6 +348,11 @@ class FilesHandlerTest {
     }
 
     @Override
+    public List<ArchivoGuardado> obtenerVarios(String userSub, List<String> fileIds) {
+      return tabla.stream().filter(a -> a.userSub().equals(userSub) && fileIds.contains(a.fileId())).toList();
+    }
+
+    @Override
     public boolean cambiarEstado(String userSub, String fileId, String de, String a) {
       Optional<ArchivoGuardado> g = obtener(userSub, fileId).filter(x -> x.status().equals(de));
       g.ifPresent(x -> tabla.set(tabla.indexOf(x), new ArchivoGuardado(x.userSub(), x.fileId(), x.carpeta(),
@@ -363,6 +368,7 @@ class FilesHandlerTest {
 
   static class Almacen implements AlmacenDeArchivos {
     final Map<String, byte[]> objetos = new HashMap<>();
+    String disposicion;
 
     @Override
     public UrlSubida urlSubida(String clave, String contentType, long size, Duration vigencia) {
@@ -371,6 +377,7 @@ class FilesHandlerTest {
 
     @Override
     public String urlDescarga(String clave, String contentDisposition, Duration vigencia) {
+      disposicion = contentDisposition;
       return "https://s3/get/" + clave;
     }
 

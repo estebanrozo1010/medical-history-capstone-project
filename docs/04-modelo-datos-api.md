@@ -91,10 +91,12 @@ Tipos permitidos: `application/pdf`, `image/jpeg`, `image/png`, `video/mp4`. Tam
 | `POST /links` | `{fileIds[1..50], ttlMinutos (1–1440)}` | `201 {token, url, expiresAt}` · `400` si la cantidad, el TTL o el body no son válidos, o hay `fileIds` repetidos · `404` si alguno no es del usuario (se revisa antes que el estado) · `409` si alguno no está `CLEAN` |
 | `GET /links` | — | `200 [{token, archivos:[{fileId, nombre}], activo, expiresAt}]`: solo los vigentes (`expiresAt` validado en código), del más nuevo al más viejo; un archivo eliminado ya no aparece en `archivos` |
 | `PATCH /links/{token}` | `{activo}` (booleano) | `200 {token, activo, expiresAt}` · `404` si es ajeno, no existe o ya venció (misma respuesta) · `400` si `activo` no es booleano |
-| `GET /s/{token}` *(pública)* | — | `200 {expiresAt, archivos:[{fileId, nombre, contentType, size}]}` (solo los `CLEAN` que aún existen) · `410` si no existe, está apagado o venció |
-| `GET /s/{token}/files/{fileId}` *(pública)* | — | `302` a presigned GET (1–5 min) · `410` · `404` si el archivo no pertenece al link |
+| `GET /s/{token}` *(pública)* | — | `200 {expiresAt, archivos:[{fileId, nombre, contentType, size}]}` (solo los `CLEAN` que aún existen, en el orden del link; puede venir vacía) · `410 NO_DISPONIBLE` si no existe, está apagado, venció o el token está mal formado (la misma respuesta en todos los casos) |
+| `GET /s/{token}/files/{fileId}` *(pública)* | `?modo=ver` opcional | `302` con `Location` a un GET firmado de 1 min con `response-content-disposition`: `attachment` (descargar, como `download-url`) o, con `modo=ver`, `inline` (el navegador lo muestra: PDF, imagen o video), con el mismo nombre · `410` igual que arriba · `404` si el archivo no pertenece al link, ya no existe o no está `CLEAN` |
 
-La URL que se comparte es la del frontend, `https://<dominio>/compartido/<token>` (pantalla pública de Angular). En la PoC `mh-links` la arma con su variable `ALLOWED_ORIGIN` (el mismo origen del CORS: `http://localhost:4200` en dev y la URL del sitio de S3 desde la Tarea 16). Esa pantalla llama a `/api/s/{token}`; no hay redirección directa porque un link puede tener varios archivos.
+Todas las respuestas de `mh-links` llevan `Cache-Control: no-store` (un 410 se guarda en caché por defecto y el link se puede volver a encender; el 302 lleva una URL firmada). Las dos rutas públicas no llevan authorizer; el `GET` sin `Authorization` no necesita preflight de CORS.
+
+La URL que se comparte es la del frontend, `https://<dominio>/compartido/<token>` (pantalla pública de Angular). En la PoC `mh-links` la arma con su variable `ALLOWED_ORIGIN` (el mismo origen del CORS: `http://localhost:4200` en dev y la URL del sitio de S3 desde la Tarea 16). Esa pantalla llama a `{base}/s/{token}` (`/api/s/{token}` en la arquitectura objetivo) y cada botón navega a `{base}/s/{token}/files/{fileId}`; no hay redirección directa porque un link puede tener varios archivos.
 
 ## Reglas transversales
 - El `sub` siempre sale del JWT, nunca del body ni de la URL.

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.mh.historial.application.ArchivoServicioTest.AlmacenFalso;
 import com.mh.historial.application.ArchivoServicioTest.RepoEnMemoria;
 import com.mh.historial.application.PerfilServicioTest.MutableClock;
 import com.mh.historial.domain.ErrorDeDominio;
@@ -25,8 +26,9 @@ class LinkServicioTest {
 
   final RepoEnMemoria archivos = new RepoEnMemoria();
   final LinksEnMemoria links = new LinksEnMemoria();
+  final AlmacenFalso almacen = new AlmacenFalso();
   final MutableClock reloj = new MutableClock(AHORA);
-  final LinkServicio servicio = new LinkServicio(links, archivos, reloj);
+  final LinkServicio servicio = new LinkServicio(links, archivos, almacen, reloj);
 
   // --- CrearLink ---
 
@@ -199,6 +201,117 @@ class LinkServicioTest {
     assertEquals(ErrorDeDominio.Tipo.NO_ENCONTRADO, e.tipo());
   }
 
+  // --- ResolverLink (pública) ---
+
+  @Test
+  void linkActivoYVigenteListaSoloLosCleanQueExistenEnElOrdenDelLink() {
+    List.of("f1", "f2", "f3", "f4").forEach(id -> archivo("sub-a", id, "CLEAN"));
+    archivo("sub-b", "f1", "CLEAN");
+    LinkGuardado l = servicio.crear("sub-a", List.of("f4", "f2", "f3", "f1"), 60);
+    archivos.cambiarEstado("sub-a", "f2", "CLEAN", "REJECTED");
+    archivos.eliminar("sub-a", "f3");
+
+    LinkDelUsuario r = servicio.resolver(l.token()).orElseThrow();
+
+    assertEquals(l, r.link());
+    assertEquals(List.of("sub-a/f4", "sub-a/f1"), r.archivos().stream().map(ArchivoGuardado::s3Key).toList());
+  }
+
+  @Test
+  void linkSinArchivosDisponiblesSigueVigenteConListaVacia() {
+    archivo("sub-a", "f1", "CLEAN");
+    String token = servicio.crear("sub-a", List.of("f1"), 60).token();
+    archivos.eliminar("sub-a", "f1");
+
+    assertEquals(List.of(), servicio.resolver(token).orElseThrow().archivos());
+  }
+
+  @Test
+  void linkApagadoVencidoOInexistenteNoSeResuelve() {
+    archivo("sub-a", "f1", "CLEAN");
+    String apagado = servicio.crear("sub-a", List.of("f1"), 60).token();
+    servicio.cambiarEstado("sub-a", apagado, false);
+    String vence = servicio.crear("sub-a", List.of("f1"), 1).token();
+
+    reloj.segundos = AHORA + 59;
+    assertTrue(servicio.resolver(vence).isPresent());
+    reloj.segundos = AHORA + 60;
+    for (String token : List.of(apagado, vence, "A".repeat(43))) {
+      assertEquals(Optional.empty(), servicio.resolver(token), token);
+    }
+  }
+
+  @Test
+  void elVencimientoSeValidaEnCodigoAunqueElTtlNoHayaBorradoElLink() {
+    archivo("sub-a", "f1", "CLEAN");
+    String token = servicio.crear("sub-a", List.of("f1"), 1).token();
+    reloj.segundos = AHORA + 3600;
+
+    assertTrue(links.datos.containsKey(token));
+    assertEquals(Optional.empty(), servicio.resolver(token));
+    assertEquals(Optional.empty(), servicio.urlDescarga(token, "f1", false));
+  }
+
+  @Test
+  void tokenMalFormadoNoConsultaDynamo() {
+    for (String token : new String[] {null, "", "corto", "A".repeat(44), "A".repeat(42) + "=", "A".repeat(42) + "/"}) {
+      assertEquals(Optional.empty(), servicio.resolver(token), token);
+      assertEquals(Optional.empty(), servicio.urlDescarga(token, "f1", false), token);
+    }
+    assertEquals(0, links.lecturas);
+  }
+
+  // --- DescargarDeLink (pública) ---
+
+  @Test
+  void descargaFirmaUnMinutoConElNombreOriginal() {
+    archivos.crear(new ArchivoGuardado("sub-a", "f1", "cardiologia", "Exámen ñ.pdf", "application/pdf", 1, "sub-a/f1",
+        "CLEAN", AHORA));
+    String token = servicio.crear("sub-a", List.of("f1"), 60).token();
+
+    assertEquals(Optional.of("https://s3/get/sub-a/f1"), servicio.urlDescarga(token, "f1", false));
+    assertEquals("sub-a/f1|" + ArchivoServicio.disposicion("Exámen ñ.pdf") + "|PT1M", almacen.descarga);
+  }
+
+  @Test
+  void verFirmaInlineParaQueElNavegadorLoMuestreConElMismoNombre() {
+    archivos.crear(new ArchivoGuardado("sub-a", "f1", "cardiologia", "Exámen ñ.pdf", "application/pdf", 1, "sub-a/f1",
+        "CLEAN", AHORA));
+    String token = servicio.crear("sub-a", List.of("f1"), 60).token();
+
+    assertEquals(Optional.of("https://s3/get/sub-a/f1"), servicio.urlDescarga(token, "f1", true));
+    assertEquals("sub-a/f1|inline; filename=\"Examen n.pdf\"; filename*=UTF-8''Ex%C3%A1men%20%C3%B1.pdf|PT1M",
+        almacen.descarga);
+  }
+
+  @Test
+  void fileIdFueraDelLinkONoCleanOEliminadoResponde404SinFirmar() {
+    List.of("f1", "f2", "f3", "otro").forEach(id -> archivo("sub-a", id, "CLEAN"));
+    String token = servicio.crear("sub-a", List.of("f1", "f2", "f3"), 60).token();
+    archivos.cambiarEstado("sub-a", "f2", "CLEAN", "REJECTED");
+    archivos.eliminar("sub-a", "f3");
+
+    for (String fileId : List.of("otro", "no-existe", "f2", "f3")) {
+      ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.urlDescarga(token, fileId, false));
+      assertEquals(ErrorDeDominio.Tipo.NO_ENCONTRADO, e.tipo(), fileId);
+    }
+    assertEquals(null, almacen.descarga);
+  }
+
+  @Test
+  void descargaDeLinkApagadoVencidoOInexistenteNoFirma() {
+    archivo("sub-a", "f1", "CLEAN");
+    String apagado = servicio.crear("sub-a", List.of("f1"), 60).token();
+    servicio.cambiarEstado("sub-a", apagado, false);
+    String vence = servicio.crear("sub-a", List.of("f1"), 1).token();
+    reloj.segundos = AHORA + 60;
+
+    for (String token : List.of(apagado, vence, "A".repeat(43))) {
+      assertEquals(Optional.empty(), servicio.urlDescarga(token, "f1", false), token);
+    }
+    assertEquals(null, almacen.descarga);
+  }
+
   private void archivo(String sub, String fileId, String status) {
     archivos.crear(new ArchivoGuardado(sub, fileId, "otros", fileId + ".pdf", "application/pdf", 1, sub + "/" + fileId,
         status, AHORA));
@@ -207,6 +320,7 @@ class LinkServicioTest {
   static class LinksEnMemoria implements LinkRepositorio {
     final Map<String, LinkGuardado> datos = new LinkedHashMap<>();
     boolean borrarAlActualizar;
+    int lecturas;
 
     @Override
     public void crear(LinkGuardado l) {
@@ -223,6 +337,7 @@ class LinkServicioTest {
 
     @Override
     public Optional<LinkGuardado> obtener(String token) {
+      lecturas++;
       return Optional.ofNullable(datos.get(token));
     }
 

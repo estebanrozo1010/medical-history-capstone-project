@@ -146,10 +146,19 @@ Resources:
           FILES_TABLE: mh-files
           # Base del frontend: la url compartida es {ALLOWED_ORIGIN}/compartido/{token}
           ALLOWED_ORIGIN: !Ref AllowedOrigin
+          # Solo para firmar el GET de la descarga desde el link
+          DOCS_BUCKET: !ImportValue mh-base-DocsBucketName
       Events:
         Crear: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /links, Method: post}}
         Listar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /links, Method: get}}
         CambiarEstado: {Type: Api, Properties: {RestApiId: !Ref Api, Path: '/links/{token}', Method: patch}}
+        # Públicas: quien recibe el link no tiene cuenta; solo cuenta el token (validado en LinkServicio)
+        Resolver:
+          Type: Api
+          Properties: {RestApiId: !Ref Api, Path: '/s/{token}', Method: get, Auth: {Authorizer: NONE}}
+        Descargar:
+          Type: Api
+          Properties: {RestApiId: !Ref Api, Path: '/s/{token}/files/{fileId}', Method: get, Auth: {Authorizer: NONE}}
 
   PostScanLogs:
     Type: AWS::Logs::LogGroup

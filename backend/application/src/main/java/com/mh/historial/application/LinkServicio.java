@@ -3,6 +3,7 @@ package com.mh.historial.application;
 import com.mh.historial.domain.ErrorDeDominio;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -13,22 +14,29 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-/** Casos de uso de mh-links para el dueño (docs/02). El userSub sale del ID token: un link ajeno no se encuentra. */
+/**
+ * Casos de uso de mh-links (docs/02). Los del dueño toman el userSub del ID token: un link ajeno no se encuentra. Los
+ * públicos (resolver, urlDescarga) solo confían en el token del link.
+ */
 public class LinkServicio {
 
   static final int MAX_ARCHIVOS = 50;
   static final int MAX_TTL_MINUTOS = 1440;
+  // El 302 se sigue al instante y S3 solo valida la firma al empezar: una descarga larga no se corta
+  static final Duration VIGENCIA_DESCARGA = Duration.ofMinutes(1);
   private static final Pattern TOKEN = Pattern.compile("[A-Za-z0-9_-]{43}");
 
   private final LinkRepositorio links;
   private final ArchivoRepositorio archivos;
+  private final AlmacenDeArchivos almacen;
   private final Clock reloj;
   // Se puede crear en el init: AWS valida que SecureRandom sigue siendo único tras el restore de SnapStart
   private final SecureRandom aleatorio = new SecureRandom();
 
-  public LinkServicio(LinkRepositorio links, ArchivoRepositorio archivos, Clock reloj) {
+  public LinkServicio(LinkRepositorio links, ArchivoRepositorio archivos, AlmacenDeArchivos almacen, Clock reloj) {
     this.links = links;
     this.archivos = archivos;
+    this.almacen = almacen;
     this.reloj = reloj;
   }
 
@@ -84,6 +92,42 @@ public class LinkServicio {
       throw noEncontrado();
     }
     return new LinkGuardado(l.token(), l.userSub(), l.fileIds(), activo, l.expiresAt(), l.createdAt());
+  }
+
+  /**
+   * Pública (GET /s/{token}): vacío si no existe, está apagado o venció (el handler responde el mismo 410). Si está
+   * vigente, solo sus archivos CLEAN que aún existen, en el orden del link.
+   */
+  public Optional<LinkDelUsuario> resolver(String token) {
+    return vigente(token).map(l -> {
+      Map<String, ArchivoGuardado> limpios = archivos.obtenerVarios(l.userSub(), l.fileIds()).stream()
+          .filter(a -> "CLEAN".equals(a.status()))
+          .collect(Collectors.toMap(ArchivoGuardado::fileId, Function.identity()));
+      return new LinkDelUsuario(l, l.fileIds().stream().filter(limpios::containsKey).map(limpios::get).toList());
+    });
+  }
+
+  /**
+   * Pública (GET /s/{token}/files/{fileId}): vacío como en resolver; NO_ENCONTRADO si el archivo no está en el link,
+   * ya no existe o no está CLEAN. ver=true firma inline (el navegador lo muestra); si no, attachment (descarga). La
+   * clave es {userSub del link}/{fileId}: no se puede pedir un archivo de otro.
+   */
+  public Optional<String> urlDescarga(String token, String fileId, boolean ver) {
+    return vigente(token).map(l -> {
+      ArchivoGuardado a = (l.fileIds().contains(fileId) ? archivos.obtener(l.userSub(), fileId)
+          : Optional.<ArchivoGuardado>empty())
+          .filter(x -> "CLEAN".equals(x.status()))
+          .orElseThrow(() -> new ErrorDeDominio(ErrorDeDominio.Tipo.NO_ENCONTRADO, "Archivo no disponible"));
+      return almacen.urlDescarga(a.s3Key(), ArchivoServicio.disposicion(ver ? "inline" : "attachment", a.nombre()),
+          VIGENCIA_DESCARGA);
+    });
+  }
+
+  private Optional<LinkGuardado> vigente(String token) {
+    long ahora = reloj.instant().getEpochSecond();
+    // Mal formado ni se busca; expiresAt en código porque el TTL de DynamoDB borra con hasta ~48 h de retraso
+    return (token != null && TOKEN.matcher(token).matches() ? links.obtener(token) : Optional.<LinkGuardado>empty())
+        .filter(l -> l.activo() && ahora < l.expiresAt());
   }
 
   // shortcut: un Query consistente con todos los archivos del usuario; si alguien llega a miles, BatchGetItem de los fileIds

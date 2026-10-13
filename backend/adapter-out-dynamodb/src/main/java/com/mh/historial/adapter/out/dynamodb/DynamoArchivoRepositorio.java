@@ -2,16 +2,23 @@ package com.mh.historial.adapter.out.dynamodb;
 
 import com.mh.historial.application.ArchivoGuardado;
 import com.mh.historial.application.ArchivoRepositorio;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.BatchGetItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.BatchGetItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.KeysAndAttributes;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 
 /** mh-files (docs/04). Sin carpeta: Query por userSub; con carpeta: Query sobre el LSI byCarpeta. */
 public class DynamoArchivoRepositorio implements ArchivoRepositorio {
+
+  // UnprocessedKeys: hasta 4 reintentos con espera de 50, 100, 200 y 400 ms (750 ms en total)
+  private static final int REINTENTOS = 4;
 
   private final DynamoDbClient dynamo;
   private final String tabla;
@@ -49,6 +56,35 @@ public class DynamoArchivoRepositorio implements ArchivoRepositorio {
     Map<String, AttributeValue> item = dynamo.getItem(r -> r.tableName(tabla).consistentRead(true)
         .key(Map.of("userSub", s(userSub), "fileId", s(fileId)))).item();
     return item == null || item.isEmpty() ? Optional.empty() : Optional.of(archivo(item));
+  }
+
+  @Override
+  public List<ArchivoGuardado> obtenerVarios(String userSub, List<String> fileIds) {
+    if (fileIds.isEmpty()) {
+      return List.of();
+    }
+    // Consistente: un archivo recién eliminado o rechazado ya no aparece en el link
+    Map<String, KeysAndAttributes> pendientes = Map.of(tabla, KeysAndAttributes.builder().consistentRead(true)
+        .keys(fileIds.stream().map(id -> Map.of("userSub", s(userSub), "fileId", s(id))).toList()).build());
+    List<ArchivoGuardado> encontrados = new ArrayList<>();
+    for (int intento = 0; ; intento++) {
+      BatchGetItemResponse r = dynamo.batchGetItem(BatchGetItemRequest.builder().requestItems(pendientes).build());
+      r.responses().getOrDefault(tabla, List.of()).forEach(i -> encontrados.add(archivo(i)));
+      pendientes = r.unprocessedKeys();
+      if (pendientes.isEmpty()) {
+        return encontrados;
+      }
+      if (intento == REINTENTOS) {
+        // Mejor un 500 que una lista incompleta que parezca la definitiva
+        throw new IllegalStateException("BatchGetItem dejó claves sin procesar tras " + REINTENTOS + " reintentos");
+      }
+      try {
+        Thread.sleep(50L << intento);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException(e);
+      }
+    }
   }
 
   @Override

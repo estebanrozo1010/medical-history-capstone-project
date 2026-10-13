@@ -344,6 +344,12 @@ class ArchivoServicioTest {
     }
 
     @Override
+    public List<ArchivoGuardado> obtenerVarios(String userSub, List<String> fileIds) {
+      // Al revés de lo pedido: BatchGetItem no garantiza el orden
+      return datos.reversed().stream().filter(a -> a.userSub().equals(userSub) && fileIds.contains(a.fileId())).toList();
+    }
+
+    @Override
     public boolean cambiarEstado(String userSub, String fileId, String de, String a) {
       for (int i = 0; i < datos.size(); i++) {
         ArchivoGuardado g = datos.get(i);
