@@ -189,8 +189,137 @@ class ArchivoServicioTest {
     assertEquals(1, repo.datos.size());
   }
 
+  // --- Multipart ---
+
+  static final long MB = 1024 * 1024;
+  static final SolicitudSubida VIDEO = new SolicitudSubida("imagenes", "eco.mp4", "video/mp4", 40 * MB);
+
+  @Test
+  void iniciarMultipartGuardaPendingAntesDeIniciarYDevuelvePartesDe16Mb() {
+    almacen.alIniciar = () -> assertEquals(1, repo.datos.size(), "el registro se crea antes de CreateMultipartUpload");
+
+    SubidaMultipart m = servicio.iniciarMultipart("sub-a", VIDEO);
+
+    assertEquals(new ArchivoGuardado("sub-a", m.fileId(), "imagenes", "eco.mp4", "video/mp4", 40 * MB,
+        "sub-a/" + m.fileId(), "PENDING", 1_700_000_000L), repo.datos.get(0));
+    assertEquals(new SubidaMultipart(m.fileId(), "up-1", 16 * MB), m);
+    assertEquals(List.of("iniciar|sub-a/" + m.fileId() + "|video/mp4"), almacen.multipart);
+  }
+
+  @Test
+  void urlParteFirmaElTamanoExactoDeCadaParteYLaUltimaEsElResto() {
+    guardado("f1", "eco.mp4", "PENDING", 0, 40 * MB);
+
+    assertEquals("https://s3/sub-a/f1?partNumber=1", servicio.urlParte("sub-a", "f1", "up-1", 1));
+    servicio.urlParte("sub-a", "f1", "up-1", 3);
+
+    assertEquals(List.of("parte|sub-a/f1|up-1|1|" + 16 * MB + "|PT10M", "parte|sub-a/f1|up-1|3|" + 8 * MB + "|PT10M"),
+        almacen.multipart);
+  }
+
+  @Test
+  void urlParteFueraDeRangoDaValidacion() {
+    guardado("f1", "eco.mp4", "PENDING", 0, 40 * MB);
+
+    for (int partNumber : new int[] {0, 4, -1}) {
+      assertEquals(ErrorDeDominio.Tipo.VALIDACION,
+          assertThrows(ErrorDeDominio.class, () -> servicio.urlParte("sub-a", "f1", "up-1", partNumber)).tipo());
+    }
+    assertTrue(almacen.multipart.isEmpty());
+  }
+
+  @Test
+  void completarConTodasLasPartesEnOrdenLasUne() {
+    guardado("f1", "eco.mp4", "PENDING", 0, 40 * MB);
+    List<Parte> partes = List.of(new Parte(1, "\"e1\""), new Parte(2, "\"e2\""), new Parte(3, "\"e3\""));
+
+    servicio.completarMultipart("sub-a", "f1", "up-1", partes);
+
+    assertEquals(List.of("completar|sub-a/f1|up-1|" + partes), almacen.multipart);
+  }
+
+  @Test
+  void completarConPartesQueFaltanSobranODesordenadasDaValidacion() {
+    guardado("f1", "eco.mp4", "PENDING", 0, 40 * MB);
+
+    for (List<Parte> partes : List.of(List.<Parte>of(), List.of(new Parte(1, "e1"), new Parte(2, "e2")),
+        List.of(new Parte(1, "e1"), new Parte(3, "e3"), new Parte(2, "e2")),
+        List.of(new Parte(1, "e1"), new Parte(2, "e2"), new Parte(3, "e3"), new Parte(4, "e4")),
+        List.of(new Parte(1, "e1"), new Parte(2, " "), new Parte(3, "e3")))) {
+      assertEquals(ErrorDeDominio.Tipo.VALIDACION, assertThrows(ErrorDeDominio.class,
+          () -> servicio.completarMultipart("sub-a", "f1", "up-1", partes)).tipo(), partes.toString());
+    }
+    assertTrue(almacen.multipart.isEmpty());
+  }
+
+  @Test
+  void abortarDescartaLaSubida() {
+    guardado("f1", "eco.mp4", "PENDING", 0, 40 * MB);
+
+    servicio.abortarMultipart("sub-a", "f1", "up-1");
+
+    assertEquals(List.of("abortar|sub-a/f1|up-1"), almacen.multipart);
+    assertEquals(1, repo.datos.size());
+  }
+
+  @Test
+  void multipartConFileIdAjenoOInexistenteDaNoEncontrado() {
+    guardado("f1", "eco.mp4", "PENDING", 0, 40 * MB);
+
+    for (String sub : new String[] {"sub-b", "sub-a"}) {
+      String fileId = sub.equals("sub-b") ? "f1" : "no-existe";
+      for (Runnable op : multipart(sub, fileId)) {
+        assertEquals(ErrorDeDominio.Tipo.NO_ENCONTRADO, assertThrows(ErrorDeDominio.class, op::run).tipo());
+      }
+    }
+    assertTrue(almacen.multipart.isEmpty());
+  }
+
+  @Test
+  void multipartDeUnArchivoQueNoEstaPendingDaConflicto() {
+    for (String estado : new String[] {"CLEAN", "REJECTED"}) {
+      guardado("f-" + estado, "eco.mp4", estado, 0, 40 * MB);
+      for (Runnable op : multipart("sub-a", "f-" + estado)) {
+        assertEquals(ErrorDeDominio.Tipo.CONFLICTO, assertThrows(ErrorDeDominio.class, op::run).tipo(), estado);
+      }
+    }
+    assertTrue(almacen.multipart.isEmpty());
+  }
+
+  @Test
+  void pendingDeMasDeUnaHoraSigueAceptandoPartes() {
+    guardado("f1", "eco.mp4", "PENDING", 0, 40 * MB);
+
+    servicio.urlParte("sub-a", "f1", "up-1", 1);
+
+    assertEquals(1, almacen.multipart.size());
+  }
+
+  @Test
+  void eliminarUnPendingAbortaLasSubidasEnPartesEnCursoYUnCleanNo() {
+    guardado("f1", "eco.mp4", "PENDING", 0, 40 * MB);
+    guardado("f2", "a.pdf", "CLEAN", 0);
+
+    servicio.eliminar("sub-a", "f1");
+    servicio.eliminar("sub-a", "f2");
+
+    assertEquals(List.of("abortarTodas|sub-a/f1"), almacen.multipart);
+    assertEquals(List.of("sub-a/f1", "sub-a/f2"), almacen.borrados);
+  }
+
+  private List<Runnable> multipart(String sub, String fileId) {
+    List<Parte> partes = List.of(new Parte(1, "e1"), new Parte(2, "e2"), new Parte(3, "e3"));
+    return List.of(() -> servicio.urlParte(sub, fileId, "up-1", 1),
+        () -> servicio.completarMultipart(sub, fileId, "up-1", partes),
+        () -> servicio.abortarMultipart(sub, fileId, "up-1"));
+  }
+
   private void guardado(String fileId, String nombre, String status, long createdAt) {
-    repo.crear(new ArchivoGuardado("sub-a", fileId, "otros", nombre, "application/pdf", 1, "sub-a/" + fileId, status,
+    guardado(fileId, nombre, status, createdAt, 1);
+  }
+
+  private void guardado(String fileId, String nombre, String status, long createdAt, long size) {
+    repo.crear(new ArchivoGuardado("sub-a", fileId, "otros", nombre, "application/pdf", size, "sub-a/" + fileId, status,
         createdAt));
   }
 
@@ -263,6 +392,37 @@ class ArchivoServicioTest {
     public void borrarTodasLasVersiones(String clave) {
       alBorrar.run();
       borrados.add(clave);
+    }
+
+    final List<String> multipart = new ArrayList<>();
+    Runnable alIniciar = () -> {};
+
+    @Override
+    public String iniciarMultipart(String clave, String contentType) {
+      alIniciar.run();
+      multipart.add("iniciar|" + clave + "|" + contentType);
+      return "up-1";
+    }
+
+    @Override
+    public String urlParte(String clave, String uploadId, int partNumber, long size, Duration vigencia) {
+      multipart.add("parte|" + clave + "|" + uploadId + "|" + partNumber + "|" + size + "|" + vigencia);
+      return "https://s3/" + clave + "?partNumber=" + partNumber;
+    }
+
+    @Override
+    public void completarMultipart(String clave, String uploadId, List<Parte> partes) {
+      multipart.add("completar|" + clave + "|" + uploadId + "|" + partes);
+    }
+
+    @Override
+    public void abortarMultipart(String clave, String uploadId) {
+      multipart.add("abortar|" + clave + "|" + uploadId);
+    }
+
+    @Override
+    public void abortarSubidasEnCurso(String clave) {
+      multipart.add("abortarTodas|" + clave);
     }
   }
 }

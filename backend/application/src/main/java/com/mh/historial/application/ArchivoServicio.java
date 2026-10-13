@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 /** Casos de uso de mh-files (docs/02). El userSub sale del ID token: un fileId ajeno no se encuentra. */
 public class ArchivoServicio {
@@ -18,6 +19,7 @@ public class ArchivoServicio {
   static final Duration VIGENCIA_URL = Duration.ofMinutes(10);
   static final long VIGENCIA_PENDIENTE = Duration.ofHours(1).toSeconds();
   public static final Duration VIGENCIA_DESCARGA = Duration.ofMinutes(5);
+  static final long TAMANO_PARTE = 16L * 1024 * 1024;
 
   private final ArchivoRepositorio repositorio;
   private final AlmacenDeArchivos almacen;
@@ -37,6 +39,41 @@ public class ArchivoServicio {
         clave, "PENDING", reloj.instant().getEpochSecond()));
     UrlSubida u = almacen.urlSubida(clave, s.contentType(), s.size(), VIGENCIA_URL);
     return new SubidaAutorizada(fileId, u.url(), u.headers(), VIGENCIA_URL.toSeconds());
+  }
+
+  /** Archivos grandes (docs/03): mismas validaciones y el registro también antes de iniciar la subida en S3. */
+  public SubidaMultipart iniciarMultipart(String userSub, SolicitudSubida s) {
+    String fileId = UUID.randomUUID().toString();
+    String clave = userSub + "/" + fileId;
+    repositorio.crear(new ArchivoGuardado(userSub, fileId, s.carpeta(), s.nombre(), s.contentType(), s.size(),
+        clave, "PENDING", reloj.instant().getEpochSecond()));
+    return new SubidaMultipart(fileId, almacen.iniciarMultipart(clave, s.contentType()), TAMANO_PARTE);
+  }
+
+  /** Cada parte va firmada con su tamaño exacto: la suma no puede pasar del tamaño declarado. */
+  public String urlParte(String userSub, String fileId, String uploadId, int partNumber) {
+    ArchivoGuardado g = pendiente(userSub, fileId);
+    long partes = partes(g);
+    if (partNumber < 1 || partNumber > partes) {
+      throw new ErrorDeDominio(ErrorDeDominio.Tipo.VALIDACION, "partNumber debe estar entre 1 y " + partes);
+    }
+    long size = partNumber < partes ? TAMANO_PARTE : g.size() - (partes - 1) * TAMANO_PARTE;
+    return almacen.urlParte(g.s3Key(), uploadId, partNumber, size, VIGENCIA_URL);
+  }
+
+  public void completarMultipart(String userSub, String fileId, String uploadId, List<Parte> partes) {
+    ArchivoGuardado g = pendiente(userSub, fileId);
+    boolean completas = partes.size() == partes(g) && IntStream.range(0, partes.size()).allMatch(i ->
+        partes.get(i).partNumber() == i + 1 && partes.get(i).etag() != null && !partes.get(i).etag().isBlank());
+    if (!completas) {
+      throw new ErrorDeDominio(ErrorDeDominio.Tipo.VALIDACION,
+          "parts debe traer las " + partes(g) + " partes en orden, cada una con su etag");
+    }
+    almacen.completarMultipart(g.s3Key(), uploadId, partes);
+  }
+
+  public void abortarMultipart(String userSub, String fileId, String uploadId) {
+    almacen.abortarMultipart(pendiente(userSub, fileId).s3Key(), uploadId);
   }
 
   /** carpeta null = todas. Del más nuevo al más viejo. */
@@ -63,6 +100,10 @@ public class ArchivoServicio {
   /** En cualquier estado: primero todas las versiones en ambos buckets y después el registro. */
   public void eliminar(String userSub, String fileId) {
     ArchivoGuardado g = propio(userSub, fileId);
+    if ("PENDING".equals(g.status())) {
+      // Sin esto las partes de un archivo ya eliminado quedarían hasta 7 días (lifecycle del bucket)
+      almacen.abortarSubidasEnCurso(g.s3Key());
+    }
     try {
       almacen.borrarTodasLasVersiones(g.s3Key());
     } catch (IllegalStateException e) {
@@ -92,6 +133,19 @@ public class ArchivoServicio {
   private ArchivoGuardado propio(String userSub, String fileId) {
     return repositorio.obtener(userSub, fileId)
         .orElseThrow(() -> new ErrorDeDominio(ErrorDeDominio.Tipo.NO_ENCONTRADO, "Archivo no encontrado"));
+  }
+
+  /** El estado guardado, no el efectivo: un video grande puede tardar más de 1 hora en subir. */
+  private ArchivoGuardado pendiente(String userSub, String fileId) {
+    ArchivoGuardado g = propio(userSub, fileId);
+    if (!"PENDING".equals(g.status())) {
+      throw new ErrorDeDominio(ErrorDeDominio.Tipo.CONFLICTO, "El archivo ya no está pendiente de subir");
+    }
+    return g;
+  }
+
+  private static long partes(ArchivoGuardado g) {
+    return (g.size() + TAMANO_PARTE - 1) / TAMANO_PARTE;
   }
 
   /** Calculado al leer, no se guarda (docs/04). */

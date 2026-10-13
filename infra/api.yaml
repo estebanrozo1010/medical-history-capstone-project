@@ -117,6 +117,10 @@ Resources:
         PedirSubida: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files/upload-url, Method: post}}
         PedirDescarga: {Type: Api, Properties: {RestApiId: !Ref Api, Path: '/files/{fileId}/download-url', Method: get}}
         Eliminar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: '/files/{fileId}', Method: delete}}
+        MultipartIniciar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files/multipart/start, Method: post}}
+        MultipartParte: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files/multipart/part-url, Method: post}}
+        MultipartCompletar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files/multipart/complete, Method: post}}
+        MultipartAbortar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files/multipart/abort, Method: post}}
 
   PostScanLogs:
     Type: AWS::Logs::LogGroup

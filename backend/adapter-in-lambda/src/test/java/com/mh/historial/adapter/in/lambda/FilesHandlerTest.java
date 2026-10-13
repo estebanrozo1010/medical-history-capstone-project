@@ -12,6 +12,7 @@ import com.mh.historial.application.AlmacenDeArchivos;
 import com.mh.historial.application.ArchivoGuardado;
 import com.mh.historial.application.ArchivoRepositorio;
 import com.mh.historial.application.ArchivoServicio;
+import com.mh.historial.application.Parte;
 import com.mh.historial.application.UrlSubida;
 import java.time.Clock;
 import java.time.Duration;
@@ -164,6 +165,110 @@ class FilesHandlerTest {
     assertEquals(1, tabla.size());
   }
 
+  // --- Multipart ---
+
+  static final String VIDEO = "{\"carpeta\":\"imagenes\",\"nombre\":\"eco.mp4\",\"contentType\":\"video/mp4\",\"size\":41943040}";
+
+  @Test
+  void multipartStartResponde201ConUploadIdYPartSizeYGuardaPendingConElSubDelToken() throws Exception {
+    APIGatewayProxyResponseEvent r = handler.handleRequest(
+        peticion("POST", "/files/multipart/start", "sub-a", "{\"userSub\":\"sub-b\"," + VIDEO.substring(1), null), null);
+
+    assertEquals(201, r.getStatusCode());
+    Map<String, Object> json = JSON.std.mapFrom(r.getBody());
+    assertEquals(Map.of("fileId", tabla.get(0).fileId(), "uploadId", "up-1", "partSize", 16777216), json);
+    assertEquals("sub-a/" + tabla.get(0).fileId(), tabla.get(0).s3Key());
+    assertEquals("PENDING", tabla.get(0).status());
+  }
+
+  @Test
+  void multipartStartInvalidoResponde400SinGuardarNada() throws Exception {
+    for (String body : new String[] {null, "no-json", VIDEO.replace("video/mp4", "video/avi"),
+        VIDEO.replace("41943040", "2147483649")}) {
+      APIGatewayProxyResponseEvent r = handler.handleRequest(peticion("POST", "/files/multipart/start", "sub-a", body, null), null);
+      assertEquals(400, r.getStatusCode(), "body: " + body);
+    }
+    assertTrue(tabla.isEmpty());
+  }
+
+  @Test
+  void multipartPartUrlResponde200ConLaUrlDeLaParte() throws Exception {
+    String fileId = iniciado();
+
+    APIGatewayProxyResponseEvent r = handler.handleRequest(peticion("POST", "/files/multipart/part-url", "sub-a",
+        "{\"fileId\":\"" + fileId + "\",\"uploadId\":\"up-1\",\"partNumber\":3}", null), null);
+
+    assertEquals(200, r.getStatusCode());
+    assertEquals(Map.of("url", "https://s3/sub-a/" + fileId + "?uploadId=up-1&partNumber=3&size=8388608"),
+        JSON.std.mapFrom(r.getBody()));
+  }
+
+  @Test
+  void multipartConBodyInvalidoResponde400() throws Exception {
+    String fileId = iniciado();
+    String f = "\"fileId\":\"" + fileId + "\",\"uploadId\":\"up-1\"";
+    for (String[] caso : new String[][] {
+        {"/files/multipart/part-url", "{" + f + ",\"partNumber\":4}"},
+        {"/files/multipart/part-url", "{" + f + ",\"partNumber\":\"1\"}"},
+        {"/files/multipart/part-url", "{" + f + "}"},
+        {"/files/multipart/part-url", "{\"fileId\":\"" + fileId + "\",\"partNumber\":1}"},
+        {"/files/multipart/part-url", "{\"fileId\":\"\",\"uploadId\":\"up-1\",\"partNumber\":1}"},
+        {"/files/multipart/complete", "{" + f + "}"},
+        {"/files/multipart/complete", "{" + f + ",\"parts\":[{\"partNumber\":1}]}"},
+        {"/files/multipart/complete", "{" + f + ",\"parts\":[1,2,3]}"},
+        {"/files/multipart/complete", "{" + f + ",\"parts\":[{\"partNumber\":1,\"etag\":\"e1\"}]}"},
+        {"/files/multipart/abort", "{\"fileId\":\"" + fileId + "\"}"},
+        {"/files/multipart/abort", "[]"}}) {
+      APIGatewayProxyResponseEvent r = handler.handleRequest(peticion("POST", caso[0], "sub-a", caso[1], null), null);
+      assertEquals(400, r.getStatusCode(), caso[0] + " " + caso[1]);
+      assertEquals("VALIDACION", JSON.std.mapFrom(r.getBody()).get("code"));
+    }
+    assertEquals(List.of(), almacen.multipart);
+  }
+
+  @Test
+  void multipartCompleteResponde200YAbortResponde204() throws Exception {
+    String fileId = iniciado();
+    String partes = "[{\"partNumber\":1,\"etag\":\"\\\"e1\\\"\"},{\"partNumber\":2,\"etag\":\"e2\"},"
+        + "{\"partNumber\":3,\"etag\":\"e3\"}]";
+
+    APIGatewayProxyResponseEvent c = handler.handleRequest(peticion("POST", "/files/multipart/complete", "sub-a",
+        "{\"fileId\":\"" + fileId + "\",\"uploadId\":\"up-1\",\"parts\":" + partes + "}", null), null);
+    APIGatewayProxyResponseEvent a = handler.handleRequest(peticion("POST", "/files/multipart/abort", "sub-a",
+        "{\"fileId\":\"" + fileId + "\",\"uploadId\":\"up-1\"}", null), null);
+
+    assertEquals(200, c.getStatusCode());
+    assertEquals(Map.of("fileId", fileId), JSON.std.mapFrom(c.getBody()));
+    assertEquals(204, a.getStatusCode());
+    assertEquals(null, a.getBody());
+    assertEquals(List.of("completar|sub-a/" + fileId + "|up-1|[Parte[partNumber=1, etag=\"e1\"], "
+        + "Parte[partNumber=2, etag=e2], Parte[partNumber=3, etag=e3]]", "abortar|sub-a/" + fileId + "|up-1"),
+        almacen.multipart);
+  }
+
+  @Test
+  void multipartAjenoResponde404YNoPendingResponde409() throws Exception {
+    guardado("sub-a", "f1", "CLEAN");
+    String fileId = iniciado();
+    for (String[] caso : new String[][] {{"sub-b", fileId, "404"}, {"sub-a", "no-existe", "404"}, {"sub-a", "f1", "409"}}) {
+      String f = "\"fileId\":\"" + caso[1] + "\",\"uploadId\":\"up-1\"";
+      for (String[] p : new String[][] {{"/files/multipart/part-url", "{" + f + ",\"partNumber\":1}"},
+          {"/files/multipart/complete", "{" + f + ",\"parts\":[{\"partNumber\":1,\"etag\":\"e1\"}]}"},
+          {"/files/multipart/abort", "{" + f + "}"}}) {
+        APIGatewayProxyResponseEvent r = handler.handleRequest(peticion("POST", p[0], caso[0], p[1], null), null);
+        assertEquals(Integer.parseInt(caso[2]), r.getStatusCode(), p[0] + " " + caso[0] + " " + caso[1]);
+      }
+    }
+    assertEquals(List.of(), almacen.multipart);
+  }
+
+  /** Un video de 40 MB (3 partes) iniciado por sub-a; limpia lo que registró el almacén al iniciar. */
+  private String iniciado() {
+    handler.handleRequest(peticion("POST", "/files/multipart/start", "sub-a", VIDEO, null), null);
+    almacen.multipart.clear();
+    return tabla.get(tabla.size() - 1).fileId();
+  }
+
   @Test
   void sinClaimsResponde401() {
     APIGatewayProxyRequestEvent sinAuth = new APIGatewayProxyRequestEvent().withHttpMethod("GET").withResource("/files")
@@ -278,6 +383,34 @@ class FilesHandlerTest {
     @Override
     public void borrarTodasLasVersiones(String clave) {
       objetos.remove(clave);
+    }
+
+    final List<String> multipart = new ArrayList<>();
+
+    @Override
+    public String iniciarMultipart(String clave, String contentType) {
+      multipart.add("iniciar|" + clave);
+      return "up-1";
+    }
+
+    @Override
+    public String urlParte(String clave, String uploadId, int partNumber, long size, Duration vigencia) {
+      return "https://s3/" + clave + "?uploadId=" + uploadId + "&partNumber=" + partNumber + "&size=" + size;
+    }
+
+    @Override
+    public void completarMultipart(String clave, String uploadId, List<Parte> partes) {
+      multipart.add("completar|" + clave + "|" + uploadId + "|" + partes);
+    }
+
+    @Override
+    public void abortarMultipart(String clave, String uploadId) {
+      multipart.add("abortar|" + clave + "|" + uploadId);
+    }
+
+    @Override
+    public void abortarSubidasEnCurso(String clave) {
+      multipart.add("abortarTodas|" + clave);
     }
   }
 }

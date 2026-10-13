@@ -37,7 +37,7 @@ Los stacks se comunican por `Outputs` + `Export` (`mh-base-DocsBucketArn`, etc.)
 - 4 Lambdas Java 21 (`mh-profile`, `mh-files`, `mh-links`, `mh-postscan`), `SnapStart: ApplyOn: PublishedVersions`, `AutoPublishAlias: live`, 1024 MB, timeout 15 s (postscan 60 s).
 - Un rol IAM por Lambda con solo lo necesario:
   - profile: `dynamodb:GetItem/PutItem/UpdateItem` en `mh-profiles`, `kms:Encrypt/Decrypt/GenerateDataKey`.
-  - files: `s3:PutObject/GetObject/AbortMultipartUpload` sobre `mh-docs/*` (para firmar), `s3:ListBucketVersions` + `s3:DeleteObjectVersion` en los dos buckets (borrar archivos), DynamoDB en `mh-files`, KMS.
+  - files: `s3:PutObject/GetObject/AbortMultipartUpload` sobre `mh-docs/*` (para firmar y unir partes), `s3:ListBucketMultipartUploads` en `mh-docs` (abortar partes al eliminar), `s3:ListBucketVersions` + `s3:DeleteObjectVersion` en los dos buckets (borrar archivos), DynamoDB en `mh-files`, KMS.
   - links: lectura (`GetItem`/`BatchGetItem`) de `mh-files`, lectura/escritura de `mh-links`, `s3:GetObject` (para firmar descarga), KMS.
   - postscan: `s3:GetObjectTagging`, `s3:GetObject` (cabecera/`HeadObject`), `s3:ListBucketVersions` + `s3:DeleteObjectVersion` en los dos buckets, `dynamodb:UpdateItem` en `mh-files`, KMS.
 - API Gateway REST, stage `v1`, con authorizer Cognito (ID token) en todas las rutas excepto las públicas `GET /api/s/{token}` y `GET /api/s/{token}/files/{fileId}`. Todas las rutas cuelgan de `/api` (ver `mh-edge`). Throttling por stage. Rutas en [04](04-modelo-datos-api.md).

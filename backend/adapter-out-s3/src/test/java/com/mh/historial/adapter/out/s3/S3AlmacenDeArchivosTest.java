@@ -32,6 +32,18 @@ class S3AlmacenDeArchivosTest {
   }
 
   @Test
+  void firmaUnaParteConSuTamanoExacto() {
+    String url = almacen.urlParte("sub-a/f1", "up/1+", 3, 16_777_216, Duration.ofMinutes(10));
+
+    assertTrue(url.startsWith("https://mh-docs-test.s3.amazonaws.com/sub-a/f1?"), url);
+    assertTrue(url.contains("partNumber=3"), url);
+    assertTrue(url.contains("uploadId=up%2F1%2B"), url);
+    // content-length firmado: S3 rechaza una parte de otro tamaño (como el PUT simple)
+    assertTrue(url.contains("X-Amz-SignedHeaders=content-length%3Bhost"), url);
+    assertTrue(url.contains("X-Amz-Expires=600"), url);
+  }
+
+  @Test
   void firmaUnGetConLaDisposicionEnLaQuery() {
     String url = almacen.urlDescarga("sub-a/f1", "attachment; filename=\"a n.pdf\"; filename*=UTF-8''a%20%C3%B1.pdf",
         Duration.ofMinutes(5));

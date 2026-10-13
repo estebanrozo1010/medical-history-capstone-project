@@ -74,12 +74,14 @@ Validación (`400 VALIDACION`): `nombre` 1–100 caracteres; `cedula` de 5 a 15 
 |---|---|---|
 | `GET /files?carpeta=` | `carpeta` opcional (sin ella devuelve todos) | `200 [{fileId, carpeta, nombre, contentType, size, status, createdAt}]` |
 | `POST /files/upload-url` | `{carpeta, nombre, contentType, size}` | `201 {fileId, url, headers, expiresIn}` · `400` carpeta/tipo/tamaño inválido |
-| `POST /files/multipart/start` | `{carpeta, nombre, contentType, size}` | `201 {fileId, uploadId, partSize}` |
-| `POST /files/multipart/part-url` | `{fileId, uploadId, partNumber}` | `200 {url}` |
-| `POST /files/multipart/complete` | `{fileId, uploadId, parts:[{partNumber, etag}]}` | `200` |
-| `POST /files/multipart/abort` | `{fileId, uploadId}` | `204` |
+| `POST /files/multipart/start` | `{carpeta, nombre, contentType, size}` | `201 {fileId, uploadId, partSize}` (`partSize` = 16 MB) · `400` como `upload-url` |
+| `POST /files/multipart/part-url` | `{fileId, uploadId, partNumber}` | `200 {url}` (PUT de 10 min con el `Content-Length` de la parte firmado; S3 devuelve el `ETag`) · `400` si `partNumber` no está entre 1 y `ceil(size/partSize)` |
+| `POST /files/multipart/complete` | `{fileId, uploadId, parts:[{partNumber, etag}]}` | `200 {fileId}` · `400` si no vienen las `n` partes en orden o no coinciden con lo subido · `404` si el `uploadId` no es de ese archivo · `409` si el objeto ya existe |
+| `POST /files/multipart/abort` | `{fileId, uploadId}` | `204` (también si ya estaba abortada) |
 | `GET /files/{fileId}/download-url` | — | `200 {url, expiresIn: 300}` · `409` si no está `CLEAN` · `404` ajeno o inexistente |
-| `DELETE /files/{fileId}` | — | `204` en cualquier estado (borra todas las versiones, ver [02](02-backend.md)) · `409` si la réplica al respaldo sigue en curso (reintentar) · `404` ajeno o inexistente |
+| `DELETE /files/{fileId}` | — | `204` en cualquier estado (si está `PENDING`, también aborta sus subidas en partes) (borra todas las versiones, ver [02](02-backend.md)) · `409` si la réplica al respaldo sigue en curso (reintentar) · `404` ajeno o inexistente |
+
+Los cuatro `multipart/*`: `404` si el `fileId` es ajeno o no existe; `409` si el registro ya no está `PENDING`.
 
 Tipos permitidos: `application/pdf`, `image/jpeg`, `image/png`, `video/mp4`. Tamaño máximo en la PoC: 2 GB (video). El nombre original se devuelve al descargar con `response-content-disposition`; no forma parte de la clave S3.
 

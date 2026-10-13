@@ -8,7 +8,9 @@ import com.fasterxml.jackson.jr.ob.JSON;
 import com.mh.historial.adapter.out.dynamodb.DynamoArchivoRepositorio;
 import com.mh.historial.adapter.out.s3.S3AlmacenDeArchivos;
 import com.mh.historial.application.ArchivoServicio;
+import com.mh.historial.application.Parte;
 import com.mh.historial.application.SubidaAutorizada;
+import com.mh.historial.application.SubidaMultipart;
 import com.mh.historial.domain.Archivo;
 import com.mh.historial.domain.ErrorDeDominio;
 import com.mh.historial.domain.SolicitudSubida;
@@ -16,7 +18,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
@@ -24,7 +28,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
-/** Lambda mh-files: subir, listar, descargar y eliminar (docs/04). El userSub sale del ID token. */
+/** Lambda mh-files: subir (simple y en partes), listar, descargar y eliminar (docs/04). El userSub sale del ID token. */
 public class FilesHandler implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
   // Timeout de 15 s: si la réplica de un archivo recién subido no termina en 8 s, DELETE responde 409 y se reintenta
@@ -51,6 +55,7 @@ public class FilesHandler implements RequestHandler<APIGatewayProxyRequestEvent,
     // Priming de SnapStart (como mh-profile): firma en local, GET de S3 y de un sub sin archivos, sin escribir nada
     almacen.urlSubida("snapstart/priming", "application/pdf", 1, Duration.ofMinutes(1));
     almacen.urlDescarga("snapstart/priming", "attachment", Duration.ofMinutes(1));
+    almacen.urlParte("snapstart/priming", "priming", 1, 1, Duration.ofMinutes(1));
     almacen.primerosBytes("snapstart/priming", 1);
     APIGatewayProxyRequestEvent.ProxyRequestContext contexto = new APIGatewayProxyRequestEvent.ProxyRequestContext();
     contexto.setAuthorizer(Map.of("claims", Map.of("sub", "snapstart-priming")));
@@ -79,7 +84,27 @@ public class FilesHandler implements RequestHandler<APIGatewayProxyRequestEvent,
             "expiresIn", ArchivoServicio.VIGENCIA_DESCARGA.toSeconds()));
         case "DELETE /files/{fileId}" -> {
           servicio.eliminar(sub, fileId(evento));
-          yield new APIGatewayProxyResponseEvent().withStatusCode(204).withHeaders(cabeceras);
+          yield sinContenido();
+        }
+        case "POST /files/multipart/start" -> {
+          SubidaMultipart m = servicio.iniciarMultipart(sub, leer(evento.getBody()));
+          yield respuesta(201, Map.of("fileId", m.fileId(), "uploadId", m.uploadId(), "partSize", m.partSize()));
+        }
+        case "POST /files/multipart/part-url" -> {
+          Map<String, Object> m = objeto(evento.getBody());
+          yield respuesta(200, Map.of("url", servicio.urlParte(sub, obligatorio(m, "fileId"), obligatorio(m, "uploadId"),
+              entero(m, "partNumber"))));
+        }
+        case "POST /files/multipart/complete" -> {
+          Map<String, Object> m = objeto(evento.getBody());
+          String fileId = obligatorio(m, "fileId");
+          servicio.completarMultipart(sub, fileId, obligatorio(m, "uploadId"), partes(m));
+          yield respuesta(200, Map.of("fileId", fileId));
+        }
+        case "POST /files/multipart/abort" -> {
+          Map<String, Object> m = objeto(evento.getBody());
+          servicio.abortarMultipart(sub, obligatorio(m, "fileId"), obligatorio(m, "uploadId"));
+          yield sinContenido();
         }
         default -> error(405, "METODO_NO_PERMITIDO", "Método no soportado");
       };
@@ -105,6 +130,13 @@ public class FilesHandler implements RequestHandler<APIGatewayProxyRequestEvent,
   }
 
   private static SolicitudSubida leer(String body) {
+    Map<String, Object> m = objeto(body);
+    // Solo enteros JSON; un decimal, texto o número enorme queda en -1 y lo rechaza la validación de tamaño
+    long size = m.get("size") instanceof Integer || m.get("size") instanceof Long ? ((Number) m.get("size")).longValue() : -1;
+    return new SolicitudSubida(cadena(m, "carpeta"), cadena(m, "nombre"), cadena(m, "contentType"), size);
+  }
+
+  private static Map<String, Object> objeto(String body) {
     Map<String, Object> m = null;
     try {
       m = body == null || body.isBlank() ? null : JSON.std.mapFrom(body);
@@ -112,11 +144,42 @@ public class FilesHandler implements RequestHandler<APIGatewayProxyRequestEvent,
       // body que no es un objeto JSON: se responde 400 abajo
     }
     if (m == null) {
-      throw new ErrorDeDominio(ErrorDeDominio.Tipo.VALIDACION, "El body debe ser un objeto JSON");
+      throw invalido("El body debe ser un objeto JSON");
     }
-    // Solo enteros JSON; un decimal, texto o número enorme queda en -1 y lo rechaza la validación de tamaño
-    long size = m.get("size") instanceof Integer || m.get("size") instanceof Long ? ((Number) m.get("size")).longValue() : -1;
-    return new SolicitudSubida(cadena(m, "carpeta"), cadena(m, "nombre"), cadena(m, "contentType"), size);
+    return m;
+  }
+
+  private static String obligatorio(Map<String, Object> m, String campo) {
+    if (!(m.get(campo) instanceof String s) || s.isBlank()) {
+      throw invalido(campo + " es obligatorio");
+    }
+    return s;
+  }
+
+  private static int entero(Map<String, Object> m, String campo) {
+    if (!(m.get(campo) instanceof Integer i)) {
+      throw invalido(campo + " debe ser un entero");
+    }
+    return i;
+  }
+
+  /** La cantidad, el orden y que cada etag no esté vacío los valida el servicio. */
+  private static List<Parte> partes(Map<String, Object> m) {
+    if (!(m.get("parts") instanceof List<?> lista)) {
+      throw invalido("parts es obligatorio");
+    }
+    List<Parte> partes = new ArrayList<>();
+    for (Object o : lista) {
+      if (!(o instanceof Map<?, ?> p) || !(p.get("partNumber") instanceof Integer n) || !(p.get("etag") instanceof String e)) {
+        throw invalido("cada parte necesita partNumber y etag");
+      }
+      partes.add(new Parte(n, e));
+    }
+    return partes;
+  }
+
+  private static ErrorDeDominio invalido(String mensaje) {
+    return new ErrorDeDominio(ErrorDeDominio.Tipo.VALIDACION, mensaje);
   }
 
   private static String cadena(Map<String, Object> m, String campo) {
@@ -142,6 +205,10 @@ public class FilesHandler implements RequestHandler<APIGatewayProxyRequestEvent,
     body.put("headers", s.headers());
     body.put("expiresIn", s.expiresIn());
     return respuesta(201, body);
+  }
+
+  private APIGatewayProxyResponseEvent sinContenido() {
+    return new APIGatewayProxyResponseEvent().withStatusCode(204).withHeaders(cabeceras);
   }
 
   private APIGatewayProxyResponseEvent error(int status, String code, String message) {
