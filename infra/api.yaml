@@ -122,6 +122,35 @@ Resources:
         MultipartCompletar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files/multipart/complete, Method: post}}
         MultipartAbortar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files/multipart/abort, Method: post}}
 
+  LinksLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/mh-links
+      RetentionInDays: 30
+  LinksFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: LinksLogs
+    Properties:
+      FunctionName: mh-links
+      Role: !Ref LabRoleArn
+      Runtime: java21
+      Handler: com.mh.historial.adapter.in.lambda.LinksHandler::handleRequest
+      CodeUri: ../backend/adapter-in-lambda/target/mh-lambda.jar
+      MemorySize: 1024
+      Timeout: 15
+      SnapStart: {ApplyOn: PublishedVersions}
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          LINKS_TABLE: mh-links
+          FILES_TABLE: mh-files
+          # Base del frontend: la url compartida es {ALLOWED_ORIGIN}/compartido/{token}
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Events:
+        Crear: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /links, Method: post}}
+        Listar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /links, Method: get}}
+        CambiarEstado: {Type: Api, Properties: {RestApiId: !Ref Api, Path: '/links/{token}', Method: patch}}
+
   PostScanLogs:
     Type: AWS::Logs::LogGroup
     Properties:

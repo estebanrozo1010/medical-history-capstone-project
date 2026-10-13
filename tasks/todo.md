@@ -40,7 +40,7 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 - [ ] Subir → escanear → descargar → eliminar, EICAR o `.exe` renombrado → `REJECTED` sin versiones en ningún bucket, réplica y CloudTrail verificados, revisión humana
 
 ## Fase 3: Links compartidos
-- [ ] Tarea 12: Crear, listar y apagar links (M)
+- [x] Tarea 12: Crear, listar y apagar links (M) — `mh-links` (`LinksHandler` en el mismo jar, 1024 MB, 15 s, SnapStart con priming): `POST /links`, `GET /links`, `PATCH /links/{token}`. `url` = `{ALLOWED_ORIGIN}/compartido/{token}`; pertenencia, estado y nombres con un `Query` consistente de los archivos del usuario (sin cambios en `ArchivoRepositorio`); `fileIds` repetidos → 400; `GET` oculta los vencidos y omite archivos eliminados; `PATCH` ajeno, inexistente o vencido → 404. Probado con curl: 2 `CLEAN` → 201 (token de 43 caracteres = 32 bytes); `GET` con nombres; `PATCH` con el token de B → 404 y del dueño → 200 (`activo=false` en DynamoDB, `fileIds` como `SS`, `expiresAt` = `createdAt` + 3600); `fileId` de B → 404; `REJECTED` y `PENDING` → 409; repetidos y TTL 1441 → 400; B ve `[]`. El log solo trae los 6 primeros caracteres (0 eventos con el token completo). Restore de SnapStart 0,8 s. `mvn verify` (141 tests)
 - [ ] Tarea 13: Resolver link y descargar desde el link (M)
 - [ ] Tarea 14: Compartir desde la app (M)
 - [ ] Tarea 15: Pantalla pública `/compartido/:token` (S)

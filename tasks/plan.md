@@ -219,9 +219,9 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 #### Tarea 12: Crear, listar y apagar links (backend)
 **Descripción:** `mh-links`: `POST /links` (1 a 50 `fileIds`, TTL 1 a 1440 min), `GET /links`, `PATCH /links/{token}`.
 **Criterios de aceptación:**
-- [ ] Crear con un archivo no `CLEAN` responde 409; con uno ajeno, 404
-- [ ] El token tiene 32 bytes de `SecureRandom`
-- [ ] Solo el dueño puede apagar el link
+- [x] Crear con un archivo no `CLEAN` responde 409; con uno ajeno, 404 (curl el 2026-10-12: `REJECTED` y `PENDING` guardado → 409; `CLEAN` de B → 404)
+- [x] El token tiene 32 bytes de `SecureRandom` (43 caracteres base64url; decodificado, 32 bytes)
+- [x] Solo el dueño puede apagar el link (token de B → 404; dueño → 200 y `activo=false` en DynamoDB)
 **Verificación:** `mvn -pl application test`; `curl` con ID token.
 **Dependencias:** Tarea 10
 **Archivos probables:** `backend/application/links/*`, `backend/adapter-out-dynamodb/*`, `infra/api.yaml`

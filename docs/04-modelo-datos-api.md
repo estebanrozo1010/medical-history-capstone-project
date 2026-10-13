@@ -88,13 +88,13 @@ Tipos permitidos: `application/pdf`, `image/jpeg`, `image/png`, `video/mp4`. Tam
 ### Links (`mh-links`)
 | Método y ruta | Body | Respuesta |
 |---|---|---|
-| `POST /links` | `{fileIds[1..50], ttlMinutos (1–1440)}` | `201 {token, url, expiresAt}` · `409` si algún archivo no está `CLEAN` · `404` si alguno no es del usuario |
-| `GET /links` | — | `200 [{token, archivos:[{fileId, nombre}], activo, expiresAt}]` |
-| `PATCH /links/{token}` | `{activo}` | `200` |
+| `POST /links` | `{fileIds[1..50], ttlMinutos (1–1440)}` | `201 {token, url, expiresAt}` · `400` si la cantidad, el TTL o el body no son válidos, o hay `fileIds` repetidos · `404` si alguno no es del usuario (se revisa antes que el estado) · `409` si alguno no está `CLEAN` |
+| `GET /links` | — | `200 [{token, archivos:[{fileId, nombre}], activo, expiresAt}]`: solo los vigentes (`expiresAt` validado en código), del más nuevo al más viejo; un archivo eliminado ya no aparece en `archivos` |
+| `PATCH /links/{token}` | `{activo}` (booleano) | `200 {token, activo, expiresAt}` · `404` si es ajeno, no existe o ya venció (misma respuesta) · `400` si `activo` no es booleano |
 | `GET /s/{token}` *(pública)* | — | `200 {expiresAt, archivos:[{fileId, nombre, contentType, size}]}` (solo los `CLEAN` que aún existen) · `410` si no existe, está apagado o venció |
 | `GET /s/{token}/files/{fileId}` *(pública)* | — | `302` a presigned GET (1–5 min) · `410` · `404` si el archivo no pertenece al link |
 
-La URL que se comparte es la del frontend, `https://<dominio>/compartido/<token>` (pantalla pública de Angular). Esa pantalla llama a `/api/s/{token}`; no hay redirección directa porque un link puede tener varios archivos.
+La URL que se comparte es la del frontend, `https://<dominio>/compartido/<token>` (pantalla pública de Angular). En la PoC `mh-links` la arma con su variable `ALLOWED_ORIGIN` (el mismo origen del CORS: `http://localhost:4200` en dev y la URL del sitio de S3 desde la Tarea 16). Esa pantalla llama a `/api/s/{token}`; no hay redirección directa porque un link puede tener varios archivos.
 
 ## Reglas transversales
 - El `sub` siempre sale del JWT, nunca del body ni de la URL.

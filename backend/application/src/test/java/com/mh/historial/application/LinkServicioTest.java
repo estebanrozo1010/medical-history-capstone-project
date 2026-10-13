@@ -1,0 +1,242 @@
+package com.mh.historial.application;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.mh.historial.application.ArchivoServicioTest.RepoEnMemoria;
+import com.mh.historial.application.PerfilServicioTest.MutableClock;
+import com.mh.historial.domain.ErrorDeDominio;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.IntStream;
+import org.junit.jupiter.api.Test;
+
+class LinkServicioTest {
+
+  static final long AHORA = 1_700_000_000L;
+
+  final RepoEnMemoria archivos = new RepoEnMemoria();
+  final LinksEnMemoria links = new LinksEnMemoria();
+  final MutableClock reloj = new MutableClock(AHORA);
+  final LinkServicio servicio = new LinkServicio(links, archivos, reloj);
+
+  // --- CrearLink ---
+
+  @Test
+  void crearGuardaActivoConExpiresAtYCreatedAtDelReloj() {
+    archivo("sub-a", "f1", "CLEAN");
+    archivo("sub-a", "f2", "CLEAN");
+
+    LinkGuardado l = servicio.crear("sub-a", List.of("f1", "f2"), 30);
+
+    assertEquals(new LinkGuardado(l.token(), "sub-a", List.of("f1", "f2"), true, AHORA + 1800, AHORA), l);
+    assertEquals(l, links.datos.get(l.token()));
+  }
+
+  @Test
+  void elTokenSon32BytesEnBase64urlYCambiaEnCadaLink() {
+    archivo("sub-a", "f1", "CLEAN");
+
+    String t1 = servicio.crear("sub-a", List.of("f1"), 1).token();
+    String t2 = servicio.crear("sub-a", List.of("f1"), 1).token();
+
+    for (String t : List.of(t1, t2)) {
+      assertEquals(43, t.length());
+      assertTrue(t.matches("[A-Za-z0-9_-]+"), t);
+      assertEquals(32, Base64.getUrlDecoder().decode(t).length);
+    }
+    assertNotEquals(t1, t2);
+  }
+
+  @Test
+  void aceptaLosLimites50ArchivosY1440Minutos() {
+    List<String> ids = IntStream.range(0, 50).mapToObj(i -> "f" + i).toList();
+    ids.forEach(id -> archivo("sub-a", id, "CLEAN"));
+
+    LinkGuardado l = servicio.crear("sub-a", ids, 1440);
+
+    assertEquals(50, l.fileIds().size());
+    assertEquals(AHORA + 86_400, l.expiresAt());
+  }
+
+  @Test
+  void validacionDeFileIdsYTtlSinGuardarNada() {
+    archivo("sub-a", "f1", "CLEAN");
+    List<String> cincuentaYUno = IntStream.range(0, 51).mapToObj(i -> "f" + i).toList();
+    cincuentaYUno.forEach(id -> archivo("sub-a", id, "CLEAN"));
+    List<Object[]> casos = List.of(
+        new Object[] {null, 10},
+        new Object[] {List.of(), 10},
+        new Object[] {cincuentaYUno, 10},
+        new Object[] {List.of("f1", "f1"), 10},
+        new Object[] {List.of("f1"), 0},
+        new Object[] {List.of("f1"), 1441},
+        new Object[] {List.of("f1"), -5});
+
+    for (Object[] c : casos) {
+      @SuppressWarnings("unchecked")
+      List<String> ids = (List<String>) c[0];
+      ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.crear("sub-a", ids, (int) c[1]));
+      assertEquals(ErrorDeDominio.Tipo.VALIDACION, e.tipo(), ids + " / " + c[1]);
+    }
+    assertTrue(links.datos.isEmpty());
+  }
+
+  @Test
+  void unArchivoAjenoOInexistenteResponde404AunqueOtroNoEsteClean() {
+    archivo("sub-a", "f1", "CLEAN");
+    archivo("sub-a", "f2", "PENDING");
+    archivo("sub-b", "fb", "CLEAN");
+
+    for (List<String> ids : List.of(List.of("f1", "fb"), List.of("f1", "no-existe"), List.of("f2", "fb"))) {
+      ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.crear("sub-a", ids, 10));
+      assertEquals(ErrorDeDominio.Tipo.NO_ENCONTRADO, e.tipo(), ids.toString());
+    }
+    assertTrue(links.datos.isEmpty());
+  }
+
+  @Test
+  void unArchivoNoCleanResponde409() {
+    archivo("sub-a", "f1", "CLEAN");
+    archivo("sub-a", "pend", "PENDING");
+    archivo("sub-a", "rech", "REJECTED");
+
+    for (String id : List.of("pend", "rech")) {
+      ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.crear("sub-a", List.of("f1", id), 10));
+      assertEquals(ErrorDeDominio.Tipo.CONFLICTO, e.tipo(), id);
+    }
+    assertTrue(links.datos.isEmpty());
+  }
+
+  // --- ListarLinks ---
+
+  @Test
+  void listarDevuelveSoloLosPropiosVigentesDelMasNuevoAlMasViejo() {
+    archivo("sub-a", "f1", "CLEAN");
+    archivo("sub-a", "f2", "CLEAN");
+    archivo("sub-b", "fb", "CLEAN");
+    String vencido = servicio.crear("sub-a", List.of("f1"), 1).token();
+    reloj.segundos += 10;
+    String viejo = servicio.crear("sub-a", List.of("f1"), 60).token();
+    reloj.segundos += 10;
+    String nuevo = servicio.crear("sub-a", List.of("f2", "f1"), 60).token();
+    servicio.crear("sub-b", List.of("fb"), 60);
+    reloj.segundos = AHORA + 60;
+
+    List<LinkDelUsuario> lista = servicio.listar("sub-a");
+
+    assertEquals(List.of(nuevo, viejo), lista.stream().map(l -> l.link().token()).toList());
+    assertFalse(lista.stream().anyMatch(l -> l.link().token().equals(vencido)));
+    assertEquals(List.of("f2", "f1"), lista.get(0).archivos().stream().map(ArchivoGuardado::fileId).toList());
+    assertEquals("f1.pdf", lista.get(1).archivos().get(0).nombre());
+  }
+
+  @Test
+  void unArchivoEliminadoDesapareceDelLinkPeroElLinkSigue() {
+    archivo("sub-a", "f1", "CLEAN");
+    archivo("sub-a", "f2", "CLEAN");
+    servicio.crear("sub-a", List.of("f1", "f2"), 60);
+    archivos.datos.removeIf(a -> a.fileId().equals("f1"));
+
+    List<LinkDelUsuario> lista = servicio.listar("sub-a");
+
+    assertEquals(1, lista.size());
+    assertEquals(List.of("f2"), lista.get(0).archivos().stream().map(ArchivoGuardado::fileId).toList());
+  }
+
+  @Test
+  void listarSinLinksDevuelveVacio() {
+    assertEquals(List.of(), servicio.listar("sub-a"));
+  }
+
+  // --- CambiarEstado ---
+
+  @Test
+  void elDuenoApagaYPrendeSuLink() {
+    archivo("sub-a", "f1", "CLEAN");
+    String token = servicio.crear("sub-a", List.of("f1"), 60).token();
+
+    LinkGuardado apagado = servicio.cambiarEstado("sub-a", token, false);
+
+    assertFalse(apagado.activo());
+    assertFalse(links.datos.get(token).activo());
+    assertTrue(servicio.cambiarEstado("sub-a", token, true).activo());
+    assertTrue(links.datos.get(token).activo());
+  }
+
+  @Test
+  void linkAjenoInexistenteVencidoOMalFormadoResponde404SinCambiarNada() {
+    archivo("sub-a", "f1", "CLEAN");
+    String token = servicio.crear("sub-a", List.of("f1"), 1).token();
+    String inexistente = "A".repeat(43);
+
+    for (String[] caso : new String[][] {{"sub-b", token}, {"sub-a", inexistente}, {"sub-a", "corto"},
+        {"sub-a", token + "x"}, {"sub-a", null}}) {
+      ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.cambiarEstado(caso[0], caso[1], false));
+      assertEquals(ErrorDeDominio.Tipo.NO_ENCONTRADO, e.tipo(), caso[0] + " " + caso[1]);
+    }
+    reloj.segundos = AHORA + 60;
+    ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.cambiarEstado("sub-a", token, false));
+    assertEquals(ErrorDeDominio.Tipo.NO_ENCONTRADO, e.tipo());
+    assertTrue(links.datos.get(token).activo());
+  }
+
+  @Test
+  void siElTtlBorraElLinkAntesDeActualizarResponde404() {
+    archivo("sub-a", "f1", "CLEAN");
+    String token = servicio.crear("sub-a", List.of("f1"), 60).token();
+    links.borrarAlActualizar = true;
+
+    ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.cambiarEstado("sub-a", token, false));
+    assertEquals(ErrorDeDominio.Tipo.NO_ENCONTRADO, e.tipo());
+  }
+
+  private void archivo(String sub, String fileId, String status) {
+    archivos.crear(new ArchivoGuardado(sub, fileId, "otros", fileId + ".pdf", "application/pdf", 1, sub + "/" + fileId,
+        status, AHORA));
+  }
+
+  static class LinksEnMemoria implements LinkRepositorio {
+    final Map<String, LinkGuardado> datos = new LinkedHashMap<>();
+    boolean borrarAlActualizar;
+
+    @Override
+    public void crear(LinkGuardado l) {
+      datos.put(l.token(), l);
+    }
+
+    @Override
+    public List<LinkGuardado> listar(String userSub) {
+      // El GSI no garantiza un orden que el servicio deba suponer
+      List<LinkGuardado> l = new ArrayList<>(datos.values().stream().filter(x -> x.userSub().equals(userSub)).toList());
+      Collections.shuffle(l);
+      return l;
+    }
+
+    @Override
+    public Optional<LinkGuardado> obtener(String token) {
+      return Optional.ofNullable(datos.get(token));
+    }
+
+    @Override
+    public boolean cambiarActivo(String token, boolean activo) {
+      if (borrarAlActualizar) {
+        datos.remove(token);
+      }
+      LinkGuardado l = datos.get(token);
+      if (l == null) {
+        return false;
+      }
+      datos.put(token, new LinkGuardado(l.token(), l.userSub(), l.fileIds(), activo, l.expiresAt(), l.createdAt()));
+      return true;
+    }
+  }
+}
