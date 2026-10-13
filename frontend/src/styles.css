@@ -10,6 +10,7 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--er
 :focus-visible { outline: 3px solid #ffb703; outline-offset: 2px; }
 button { padding: .6rem 1rem; margin-right: .5rem; border: 0; border-radius: .25rem; background: var(--primario); color: #fff; font: inherit; cursor: pointer; }
 button.secundario { background: transparent; color: var(--primario); border: 1px solid var(--primario); }
+button.peligro { background: var(--error); }
 button:disabled { opacity: .6; cursor: progress; }
 a { color: var(--primario); }
 .error { color: var(--error); margin: .25rem 0; }
@@ -21,6 +22,8 @@ a { color: var(--primario); }
 .lista { list-style: none; padding: 0; }
 .lista li { display: flex; flex-wrap: wrap; gap: .25rem 1rem; align-items: baseline; padding: .6rem 0; border-bottom: 1px solid #d5dbe1; }
 .lista .nombre { flex: 1 1 100%; font-weight: 600; overflow-wrap: anywhere; }
+.lista .acciones { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.lista .acciones button { margin-right: 0; }
 .estado { padding: 0 .5rem; border-radius: 1rem; font-size: .875rem; background: #eef1f4; }
 .estado-CLEAN { background: #e6f4ea; color: var(--exito); }
 .estado-INFECTED, .estado-REJECTED, .estado-SCAN_FAILED, .estado-UPLOAD_EXPIRED { background: #fdecee; color: var(--error); }

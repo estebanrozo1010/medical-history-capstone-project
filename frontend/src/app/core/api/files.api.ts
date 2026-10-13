@@ -64,6 +64,16 @@ export class FilesApi {
     });
   }
 
+  /** GET firmado de 5 min; solo para archivos CLEAN (409 si no). */
+  urlDescarga(fileId: string) {
+    return this.http.get<{ url: string; expiresIn: number }>(`${this.url}/${encodeURIComponent(fileId)}/download-url`);
+  }
+
+  /** Borra todas las versiones y el registro; 409 si la copia de respaldo sigue en curso. */
+  eliminar(fileId: string) {
+    return this.http.delete<void>(`${this.url}/${encodeURIComponent(fileId)}`);
+  }
+
   /** PUT directo a S3. La URL no empieza con apiUrl, así que el interceptor no le pone el token. */
   subirAS3(subida: SubidaAutorizada, archivo: File) {
     return this.http.put(subida.url, archivo, {

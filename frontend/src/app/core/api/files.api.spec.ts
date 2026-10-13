@@ -76,6 +76,26 @@ describe('FilesApi', () => {
     req.flush(null);
     expect(tipos).toContain(HttpEventType.UploadProgress);
   });
+
+  it('urlDescarga hace GET {apiUrl}/files/{fileId}/download-url con el token', async () => {
+    let r: unknown;
+    api.urlDescarga('f1').subscribe((x) => (r = x));
+    await turno();
+    const req = backend.expectOne(`${API}/files/f1/download-url`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.headers.get('Authorization')).toBe('Bearer tok');
+    req.flush({ url: S3, expiresIn: 300 });
+    expect(r).toEqual({ url: S3, expiresIn: 300 });
+  });
+
+  it('eliminar hace DELETE {apiUrl}/files/{fileId} con el token', async () => {
+    api.eliminar('f1').subscribe();
+    await turno();
+    const req = backend.expectOne(`${API}/files/f1`);
+    expect(req.request.method).toBe('DELETE');
+    expect(req.request.headers.get('Authorization')).toBe('Bearer tok');
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
 });
 
 describe('validarArchivo', () => {
