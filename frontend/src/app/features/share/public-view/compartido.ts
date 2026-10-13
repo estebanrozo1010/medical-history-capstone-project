@@ -2,6 +2,7 @@ import { HttpBackend, HttpClient, HttpErrorResponse } from '@angular/common/http
 import { Component, DOCUMENT, Injectable, Injector, afterNextRender, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { Permiso } from '../../../core/api/links.api';
 import { Config } from '../../../core/config';
 import { tamano } from '../../folders/carpeta';
 import { fechaHora } from '../compartir';
@@ -26,7 +27,7 @@ export class CompartidoApi {
 
   /** 410 si no existe, está apagado, venció o el token está mal formado. */
   resolver(token: string) {
-    return this.http.get<{ expiresAt: number; archivos: ArchivoCompartido[] }>(this.url(token));
+    return this.http.get<{ expiresAt: number; permiso: Permiso; archivos: ArchivoCompartido[] }>(this.url(token));
   }
 }
 
@@ -55,8 +56,12 @@ export class CompartidoApi {
                 <span class="nombre">{{ a.nombre }}</span>
                 <span class="ayuda">{{ tamano(a.size) }}</span>
                 <span class="acciones">
-                  <a [href]="archivoUrl(a) + '?modo=ver'" target="_blank" rel="noopener" [attr.aria-label]="'Ver ' + a.nombre + ' (se abre en otra pestaña)'">Ver</a>
-                  <a [href]="archivoUrl(a)" [attr.aria-label]="'Descargar ' + a.nombre">Descargar</a>
+                  @if (permiso() !== 'descargar') {
+                    <a [href]="archivoUrl(a) + '?modo=ver'" target="_blank" rel="noopener" [attr.aria-label]="'Ver ' + a.nombre + ' (se abre en otra pestaña)'">Ver</a>
+                  }
+                  @if (permiso() !== 'ver') {
+                    <a [href]="archivoUrl(a)" [attr.aria-label]="'Descargar ' + a.nombre">Descargar</a>
+                  }
                 </span>
               </li>
             }
@@ -76,6 +81,8 @@ export class Compartido {
   protected readonly estado = signal<'cargando' | 'error' | 'no-disponible' | 'listo'>('cargando');
   protected readonly archivos = signal<ArchivoCompartido[]>([]);
   protected readonly expiresAt = signal(0);
+  // Solo oculta el botón: el backend fija ver o descargar según el permiso aunque se cambie la URL
+  protected readonly permiso = signal<Permiso>('ambos');
   protected readonly fecha = fechaHora;
   protected readonly tamano = tamano;
 
@@ -100,6 +107,7 @@ export class Compartido {
       // Sin orden garantizado (fileIds es un SS)
       this.archivos.set([...r.archivos].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
       this.expiresAt.set(r.expiresAt);
+      this.permiso.set(r.permiso);
       this.estado.set('listo');
     } catch (e) {
       this.estado.set(e instanceof HttpErrorResponse && e.status === 410 ? 'no-disponible' : 'error');

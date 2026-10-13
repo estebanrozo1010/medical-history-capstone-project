@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -25,6 +26,7 @@ public class LinkServicio {
   // El 302 se sigue al instante y S3 solo valida la firma al empezar: una descarga larga no se corta
   static final Duration VIGENCIA_DESCARGA = Duration.ofMinutes(1);
   private static final Pattern TOKEN = Pattern.compile("[A-Za-z0-9_-]{43}");
+  static final Set<String> PERMISOS = Set.of("ver", "descargar", "ambos");
 
   private final LinkRepositorio links;
   private final ArchivoRepositorio archivos;
@@ -40,8 +42,10 @@ public class LinkServicio {
     this.reloj = reloj;
   }
 
-  /** Todos los archivos deben ser del usuario (si no, 404) y estar CLEAN (si no, 409). */
-  public LinkGuardado crear(String userSub, List<String> fileIds, int ttlMinutos) {
+  /**
+   * Todos los archivos deben ser del usuario (si no, 404) y estar CLEAN (si no, 409). permiso: ver, descargar o ambos.
+   */
+  public LinkGuardado crear(String userSub, List<String> fileIds, int ttlMinutos, String permiso) {
     if (fileIds == null || fileIds.isEmpty() || fileIds.size() > MAX_ARCHIVOS) {
       throw validacion("fileIds debe traer de 1 a " + MAX_ARCHIVOS + " archivos");
     }
@@ -50,6 +54,9 @@ public class LinkServicio {
     }
     if (ttlMinutos < 1 || ttlMinutos > MAX_TTL_MINUTOS) {
       throw validacion("ttlMinutos debe estar entre 1 y " + MAX_TTL_MINUTOS);
+    }
+    if (permiso == null || !PERMISOS.contains(permiso)) {
+      throw validacion("permiso debe ser ver, descargar o ambos");
     }
     Map<String, ArchivoGuardado> propios = propios(userSub);
     if (!propios.keySet().containsAll(fileIds)) {
@@ -62,7 +69,7 @@ public class LinkServicio {
     aleatorio.nextBytes(bytes);
     long ahora = reloj.instant().getEpochSecond();
     LinkGuardado link = new LinkGuardado(Base64.getUrlEncoder().withoutPadding().encodeToString(bytes), userSub,
-        List.copyOf(fileIds), true, ahora + ttlMinutos * 60L, ahora);
+        List.copyOf(fileIds), true, ahora + ttlMinutos * 60L, ahora, permiso);
     links.crear(link);
     return link;
   }
@@ -91,7 +98,7 @@ public class LinkServicio {
     if (!links.cambiarActivo(token, activo)) {
       throw noEncontrado();
     }
-    return new LinkGuardado(l.token(), l.userSub(), l.fileIds(), activo, l.expiresAt(), l.createdAt());
+    return new LinkGuardado(l.token(), l.userSub(), l.fileIds(), activo, l.expiresAt(), l.createdAt(), l.permiso());
   }
 
   /**
@@ -110,8 +117,8 @@ public class LinkServicio {
 
   /**
    * Pública (GET /s/{token}/files/{fileId}): vacío como en resolver; NO_ENCONTRADO si el archivo no está en el link,
-   * ya no existe o no está CLEAN. ver=true firma inline (el navegador lo muestra); si no, attachment (descarga). La
-   * clave es {userSub del link}/{fileId}: no se puede pedir un archivo de otro.
+   * ya no existe o no está CLEAN. ver=true firma inline (el navegador lo muestra); si no, attachment (descarga), salvo
+   * que el permiso del link fije uno. La clave es {userSub del link}/{fileId}: no se puede pedir un archivo de otro.
    */
   public Optional<String> urlDescarga(String token, String fileId, boolean ver) {
     return vigente(token).map(l -> {
@@ -119,7 +126,14 @@ public class LinkServicio {
           : Optional.<ArchivoGuardado>empty())
           .filter(x -> "CLEAN".equals(x.status()))
           .orElseThrow(() -> new ErrorDeDominio(ErrorDeDominio.Tipo.NO_ENCONTRADO, "Archivo no disponible"));
-      return almacen.urlDescarga(a.s3Key(), ArchivoServicio.disposicion(ver ? "inline" : "attachment", a.nombre()),
+      // El permiso manda sobre ?modo: cambiar la URL no habilita lo que quien compartió no permitió.
+      // Solo ver no impide guardar: el navegador igual puede guardar lo que muestra
+      boolean inline = switch (l.permiso()) {
+        case "ver" -> true;
+        case "descargar" -> false;
+        default -> ver;
+      };
+      return almacen.urlDescarga(a.s3Key(), ArchivoServicio.disposicion(inline ? "inline" : "attachment", a.nombre()),
           VIGENCIA_DESCARGA);
     });
   }

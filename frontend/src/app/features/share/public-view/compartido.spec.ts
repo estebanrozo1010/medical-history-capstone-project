@@ -60,7 +60,7 @@ describe('Compartido (pantalla pública)', () => {
     auth.idToken.mockResolvedValueOnce(null);
     const el = await abrir();
     expect(el.querySelector('[role=status]')?.textContent).toContain('Cargando');
-    const req = await responder({ expiresAt: EXPIRA, archivos: [] });
+    const req = await responder({ expiresAt: EXPIRA, permiso: 'ambos', archivos: [] });
     expect(req.request.method).toBe('GET');
     expect(req.request.headers.has('Authorization')).toBe(false);
   });
@@ -68,13 +68,13 @@ describe('Compartido (pantalla pública)', () => {
   it('con sesión iniciada tampoco manda Authorization', async () => {
     await abrir();
     await new Promise((r) => setTimeout(r));
-    const req = await responder({ expiresAt: EXPIRA, archivos: [] });
+    const req = await responder({ expiresAt: EXPIRA, permiso: 'ambos', archivos: [] });
     expect(req.request.headers.has('Authorization')).toBe(false);
   });
 
   it('lista los archivos por nombre con tamaño, vencimiento y enlaces Ver y Descargar', async () => {
     const el = await abrir();
-    await responder({ expiresAt: EXPIRA, archivos: [archivo('f2', 'Rayos X.png', 2048), archivo('f1', 'análisis.pdf', 500)] });
+    await responder({ expiresAt: EXPIRA, permiso: 'ambos', archivos: [archivo('f2', 'Rayos X.png', 2048), archivo('f1', 'análisis.pdf', 500)] });
 
     const filas = [...el.querySelectorAll('li')];
     expect(filas.map((f) => f.querySelector('.nombre')?.textContent)).toEqual(['análisis.pdf', 'Rayos X.png']);
@@ -92,6 +92,16 @@ describe('Compartido (pantalla pública)', () => {
     expect(el.querySelector('[role=alert]')).toBeNull();
   });
 
+  it.each([
+    ['ver', ['Ver']],
+    ['descargar', ['Descargar']],
+    ['ambos', ['Ver', 'Descargar']],
+  ])('con permiso %s muestra solo %j', async (permiso, enlaces) => {
+    const el = await abrir();
+    await responder({ expiresAt: EXPIRA, permiso, archivos: [archivo('f1', 'a.pdf')] });
+    expect([...el.querySelectorAll('li a')].map((a) => a.textContent!.trim())).toEqual(enlaces);
+  });
+
   it('ante 410 muestra "enlace no disponible"', async () => {
     const el = await abrir();
     await responder({ code: 'NO_DISPONIBLE', message: 'x' }, 410);
@@ -102,7 +112,7 @@ describe('Compartido (pantalla pública)', () => {
 
   it('con la lista vacía muestra su propio mensaje', async () => {
     const el = await abrir();
-    await responder({ expiresAt: EXPIRA, archivos: [] });
+    await responder({ expiresAt: EXPIRA, permiso: 'ambos', archivos: [] });
     expect(el.textContent).toContain('ya no están disponibles');
     expect(el.querySelector('ul')).toBeNull();
   });
@@ -115,18 +125,18 @@ describe('Compartido (pantalla pública)', () => {
 
   it('al volver a la pestaña recarga la lista sin volver a "Cargando"', async () => {
     const el = await abrir();
-    await responder({ expiresAt: EXPIRA, archivos: [archivo('f1', 'a.pdf'), archivo('f2', 'b.pdf')] });
+    await responder({ expiresAt: EXPIRA, permiso: 'ambos', archivos: [archivo('f1', 'a.pdf'), archivo('f2', 'b.pdf')] });
 
     await volver();
     harness.detectChanges();
     expect(el.textContent).not.toContain('Cargando');
-    await responder({ expiresAt: EXPIRA, archivos: [archivo('f2', 'b.pdf')] });
+    await responder({ expiresAt: EXPIRA, permiso: 'ambos', archivos: [archivo('f2', 'b.pdf')] });
     expect([...el.querySelectorAll('.nombre')].map((n) => n.textContent)).toEqual(['b.pdf']);
   });
 
   it('si al volver ya no está disponible, lo dice y lleva el foco al título', async () => {
     const el = await abrir();
-    await responder({ expiresAt: EXPIRA, archivos: [archivo('f1', 'a.pdf')] });
+    await responder({ expiresAt: EXPIRA, permiso: 'ambos', archivos: [archivo('f1', 'a.pdf')] });
     el.querySelector<HTMLAnchorElement>('a')!.focus();
 
     await volver();
@@ -138,7 +148,7 @@ describe('Compartido (pantalla pública)', () => {
 
   it('no recarga si la pestaña sigue oculta', async () => {
     await abrir();
-    await responder({ expiresAt: EXPIRA, archivos: [] });
+    await responder({ expiresAt: EXPIRA, permiso: 'ambos', archivos: [] });
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
     document.dispatchEvent(new Event('visibilitychange'));
     backend.expectNone(`${API}/s/${TOKEN}`);

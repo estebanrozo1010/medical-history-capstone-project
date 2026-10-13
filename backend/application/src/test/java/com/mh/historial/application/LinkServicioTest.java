@@ -37,9 +37,9 @@ class LinkServicioTest {
     archivo("sub-a", "f1", "CLEAN");
     archivo("sub-a", "f2", "CLEAN");
 
-    LinkGuardado l = servicio.crear("sub-a", List.of("f1", "f2"), 30);
+    LinkGuardado l = servicio.crear("sub-a", List.of("f1", "f2"), 30, "ambos");
 
-    assertEquals(new LinkGuardado(l.token(), "sub-a", List.of("f1", "f2"), true, AHORA + 1800, AHORA), l);
+    assertEquals(new LinkGuardado(l.token(), "sub-a", List.of("f1", "f2"), true, AHORA + 1800, AHORA, "ambos"), l);
     assertEquals(l, links.datos.get(l.token()));
   }
 
@@ -47,8 +47,8 @@ class LinkServicioTest {
   void elTokenSon32BytesEnBase64urlYCambiaEnCadaLink() {
     archivo("sub-a", "f1", "CLEAN");
 
-    String t1 = servicio.crear("sub-a", List.of("f1"), 1).token();
-    String t2 = servicio.crear("sub-a", List.of("f1"), 1).token();
+    String t1 = servicio.crear("sub-a", List.of("f1"), 1, "ambos").token();
+    String t2 = servicio.crear("sub-a", List.of("f1"), 1, "ambos").token();
 
     for (String t : List.of(t1, t2)) {
       assertEquals(43, t.length());
@@ -63,7 +63,7 @@ class LinkServicioTest {
     List<String> ids = IntStream.range(0, 50).mapToObj(i -> "f" + i).toList();
     ids.forEach(id -> archivo("sub-a", id, "CLEAN"));
 
-    LinkGuardado l = servicio.crear("sub-a", ids, 1440);
+    LinkGuardado l = servicio.crear("sub-a", ids, 1440, "ambos");
 
     assertEquals(50, l.fileIds().size());
     assertEquals(AHORA + 86_400, l.expiresAt());
@@ -86,7 +86,7 @@ class LinkServicioTest {
     for (Object[] c : casos) {
       @SuppressWarnings("unchecked")
       List<String> ids = (List<String>) c[0];
-      ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.crear("sub-a", ids, (int) c[1]));
+      ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.crear("sub-a", ids, (int) c[1], "ambos"));
       assertEquals(ErrorDeDominio.Tipo.VALIDACION, e.tipo(), ids + " / " + c[1]);
     }
     assertTrue(links.datos.isEmpty());
@@ -99,7 +99,7 @@ class LinkServicioTest {
     archivo("sub-b", "fb", "CLEAN");
 
     for (List<String> ids : List.of(List.of("f1", "fb"), List.of("f1", "no-existe"), List.of("f2", "fb"))) {
-      ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.crear("sub-a", ids, 10));
+      ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.crear("sub-a", ids, 10, "ambos"));
       assertEquals(ErrorDeDominio.Tipo.NO_ENCONTRADO, e.tipo(), ids.toString());
     }
     assertTrue(links.datos.isEmpty());
@@ -112,7 +112,8 @@ class LinkServicioTest {
     archivo("sub-a", "rech", "REJECTED");
 
     for (String id : List.of("pend", "rech")) {
-      ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.crear("sub-a", List.of("f1", id), 10));
+      ErrorDeDominio e = assertThrows(ErrorDeDominio.class,
+          () -> servicio.crear("sub-a", List.of("f1", id), 10, "ambos"));
       assertEquals(ErrorDeDominio.Tipo.CONFLICTO, e.tipo(), id);
     }
     assertTrue(links.datos.isEmpty());
@@ -125,12 +126,12 @@ class LinkServicioTest {
     archivo("sub-a", "f1", "CLEAN");
     archivo("sub-a", "f2", "CLEAN");
     archivo("sub-b", "fb", "CLEAN");
-    String vencido = servicio.crear("sub-a", List.of("f1"), 1).token();
+    String vencido = servicio.crear("sub-a", List.of("f1"), 1, "ambos").token();
     reloj.segundos += 10;
-    String viejo = servicio.crear("sub-a", List.of("f1"), 60).token();
+    String viejo = servicio.crear("sub-a", List.of("f1"), 60, "ambos").token();
     reloj.segundos += 10;
-    String nuevo = servicio.crear("sub-a", List.of("f2", "f1"), 60).token();
-    servicio.crear("sub-b", List.of("fb"), 60);
+    String nuevo = servicio.crear("sub-a", List.of("f2", "f1"), 60, "ambos").token();
+    servicio.crear("sub-b", List.of("fb"), 60, "ambos");
     reloj.segundos = AHORA + 60;
 
     List<LinkDelUsuario> lista = servicio.listar("sub-a");
@@ -145,7 +146,7 @@ class LinkServicioTest {
   void unArchivoEliminadoDesapareceDelLinkPeroElLinkSigue() {
     archivo("sub-a", "f1", "CLEAN");
     archivo("sub-a", "f2", "CLEAN");
-    servicio.crear("sub-a", List.of("f1", "f2"), 60);
+    servicio.crear("sub-a", List.of("f1", "f2"), 60, "ambos");
     archivos.datos.removeIf(a -> a.fileId().equals("f1"));
 
     List<LinkDelUsuario> lista = servicio.listar("sub-a");
@@ -164,7 +165,7 @@ class LinkServicioTest {
   @Test
   void elDuenoApagaYPrendeSuLink() {
     archivo("sub-a", "f1", "CLEAN");
-    String token = servicio.crear("sub-a", List.of("f1"), 60).token();
+    String token = servicio.crear("sub-a", List.of("f1"), 60, "ambos").token();
 
     LinkGuardado apagado = servicio.cambiarEstado("sub-a", token, false);
 
@@ -177,7 +178,7 @@ class LinkServicioTest {
   @Test
   void linkAjenoInexistenteVencidoOMalFormadoResponde404SinCambiarNada() {
     archivo("sub-a", "f1", "CLEAN");
-    String token = servicio.crear("sub-a", List.of("f1"), 1).token();
+    String token = servicio.crear("sub-a", List.of("f1"), 1, "ambos").token();
     String inexistente = "A".repeat(43);
 
     for (String[] caso : new String[][] {{"sub-b", token}, {"sub-a", inexistente}, {"sub-a", "corto"},
@@ -194,7 +195,7 @@ class LinkServicioTest {
   @Test
   void siElTtlBorraElLinkAntesDeActualizarResponde404() {
     archivo("sub-a", "f1", "CLEAN");
-    String token = servicio.crear("sub-a", List.of("f1"), 60).token();
+    String token = servicio.crear("sub-a", List.of("f1"), 60, "ambos").token();
     links.borrarAlActualizar = true;
 
     ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.cambiarEstado("sub-a", token, false));
@@ -207,7 +208,7 @@ class LinkServicioTest {
   void linkActivoYVigenteListaSoloLosCleanQueExistenEnElOrdenDelLink() {
     List.of("f1", "f2", "f3", "f4").forEach(id -> archivo("sub-a", id, "CLEAN"));
     archivo("sub-b", "f1", "CLEAN");
-    LinkGuardado l = servicio.crear("sub-a", List.of("f4", "f2", "f3", "f1"), 60);
+    LinkGuardado l = servicio.crear("sub-a", List.of("f4", "f2", "f3", "f1"), 60, "ambos");
     archivos.cambiarEstado("sub-a", "f2", "CLEAN", "REJECTED");
     archivos.eliminar("sub-a", "f3");
 
@@ -220,7 +221,7 @@ class LinkServicioTest {
   @Test
   void linkSinArchivosDisponiblesSigueVigenteConListaVacia() {
     archivo("sub-a", "f1", "CLEAN");
-    String token = servicio.crear("sub-a", List.of("f1"), 60).token();
+    String token = servicio.crear("sub-a", List.of("f1"), 60, "ambos").token();
     archivos.eliminar("sub-a", "f1");
 
     assertEquals(List.of(), servicio.resolver(token).orElseThrow().archivos());
@@ -229,9 +230,9 @@ class LinkServicioTest {
   @Test
   void linkApagadoVencidoOInexistenteNoSeResuelve() {
     archivo("sub-a", "f1", "CLEAN");
-    String apagado = servicio.crear("sub-a", List.of("f1"), 60).token();
+    String apagado = servicio.crear("sub-a", List.of("f1"), 60, "ambos").token();
     servicio.cambiarEstado("sub-a", apagado, false);
-    String vence = servicio.crear("sub-a", List.of("f1"), 1).token();
+    String vence = servicio.crear("sub-a", List.of("f1"), 1, "ambos").token();
 
     reloj.segundos = AHORA + 59;
     assertTrue(servicio.resolver(vence).isPresent());
@@ -244,7 +245,7 @@ class LinkServicioTest {
   @Test
   void elVencimientoSeValidaEnCodigoAunqueElTtlNoHayaBorradoElLink() {
     archivo("sub-a", "f1", "CLEAN");
-    String token = servicio.crear("sub-a", List.of("f1"), 1).token();
+    String token = servicio.crear("sub-a", List.of("f1"), 1, "ambos").token();
     reloj.segundos = AHORA + 3600;
 
     assertTrue(links.datos.containsKey(token));
@@ -267,7 +268,7 @@ class LinkServicioTest {
   void descargaFirmaUnMinutoConElNombreOriginal() {
     archivos.crear(new ArchivoGuardado("sub-a", "f1", "cardiologia", "Exámen ñ.pdf", "application/pdf", 1, "sub-a/f1",
         "CLEAN", AHORA));
-    String token = servicio.crear("sub-a", List.of("f1"), 60).token();
+    String token = servicio.crear("sub-a", List.of("f1"), 60, "ambos").token();
 
     assertEquals(Optional.of("https://s3/get/sub-a/f1"), servicio.urlDescarga(token, "f1", false));
     assertEquals("sub-a/f1|" + ArchivoServicio.disposicion("Exámen ñ.pdf") + "|PT1M", almacen.descarga);
@@ -277,7 +278,7 @@ class LinkServicioTest {
   void verFirmaInlineParaQueElNavegadorLoMuestreConElMismoNombre() {
     archivos.crear(new ArchivoGuardado("sub-a", "f1", "cardiologia", "Exámen ñ.pdf", "application/pdf", 1, "sub-a/f1",
         "CLEAN", AHORA));
-    String token = servicio.crear("sub-a", List.of("f1"), 60).token();
+    String token = servicio.crear("sub-a", List.of("f1"), 60, "ambos").token();
 
     assertEquals(Optional.of("https://s3/get/sub-a/f1"), servicio.urlDescarga(token, "f1", true));
     assertEquals("sub-a/f1|inline; filename=\"Examen n.pdf\"; filename*=UTF-8''Ex%C3%A1men%20%C3%B1.pdf|PT1M",
@@ -287,7 +288,7 @@ class LinkServicioTest {
   @Test
   void fileIdFueraDelLinkONoCleanOEliminadoResponde404SinFirmar() {
     List.of("f1", "f2", "f3", "otro").forEach(id -> archivo("sub-a", id, "CLEAN"));
-    String token = servicio.crear("sub-a", List.of("f1", "f2", "f3"), 60).token();
+    String token = servicio.crear("sub-a", List.of("f1", "f2", "f3"), 60, "ambos").token();
     archivos.cambiarEstado("sub-a", "f2", "CLEAN", "REJECTED");
     archivos.eliminar("sub-a", "f3");
 
@@ -299,11 +300,41 @@ class LinkServicioTest {
   }
 
   @Test
+  void crearGuardaElPermisoYRechazaUnoDesconocido() {
+    archivo("sub-a", "f1", "CLEAN");
+
+    for (String p : List.of("ver", "descargar", "ambos")) {
+      assertEquals(p, servicio.crear("sub-a", List.of("f1"), 10, p).permiso());
+    }
+    for (String p : new String[] {null, "", "otro", "VER"}) {
+      ErrorDeDominio e = assertThrows(ErrorDeDominio.class, () -> servicio.crear("sub-a", List.of("f1"), 10, p));
+      assertEquals(ErrorDeDominio.Tipo.VALIDACION, e.tipo(), String.valueOf(p));
+    }
+    assertEquals(3, links.datos.size());
+  }
+
+  @Test
+  void elPermisoDelLinkMandaSobreElModoPedido() {
+    archivo("sub-a", "f1", "CLEAN");
+    String soloVer = servicio.crear("sub-a", List.of("f1"), 60, "ver").token();
+    String soloDescargar = servicio.crear("sub-a", List.of("f1"), 60, "descargar").token();
+    String ambos = servicio.crear("sub-a", List.of("f1"), 60, "ambos").token();
+
+    // token, modo pedido (ver?), disposición firmada
+    for (Object[] c : new Object[][] {{soloVer, false, "inline"}, {soloVer, true, "inline"},
+        {soloDescargar, true, "attachment"}, {soloDescargar, false, "attachment"},
+        {ambos, true, "inline"}, {ambos, false, "attachment"}}) {
+      servicio.urlDescarga((String) c[0], "f1", (boolean) c[1]);
+      assertTrue(almacen.descarga.startsWith("sub-a/f1|" + c[2] + ";"), almacen.descarga);
+    }
+  }
+
+  @Test
   void descargaDeLinkApagadoVencidoOInexistenteNoFirma() {
     archivo("sub-a", "f1", "CLEAN");
-    String apagado = servicio.crear("sub-a", List.of("f1"), 60).token();
+    String apagado = servicio.crear("sub-a", List.of("f1"), 60, "ambos").token();
     servicio.cambiarEstado("sub-a", apagado, false);
-    String vence = servicio.crear("sub-a", List.of("f1"), 1).token();
+    String vence = servicio.crear("sub-a", List.of("f1"), 1, "ambos").token();
     reloj.segundos = AHORA + 60;
 
     for (String token : List.of(apagado, vence, "A".repeat(43))) {
@@ -350,7 +381,8 @@ class LinkServicioTest {
       if (l == null) {
         return false;
       }
-      datos.put(token, new LinkGuardado(l.token(), l.userSub(), l.fileIds(), activo, l.expiresAt(), l.createdAt()));
+      datos.put(token,
+          new LinkGuardado(l.token(), l.userSub(), l.fileIds(), activo, l.expiresAt(), l.createdAt(), l.permiso()));
       return true;
     }
   }

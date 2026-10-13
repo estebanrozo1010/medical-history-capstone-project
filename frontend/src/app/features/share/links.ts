@@ -3,7 +3,7 @@ import { Component, DOCUMENT, Injector, afterNextRender, inject, signal } from '
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { Link, LinksApi } from '../../core/api/links.api';
-import { fechaHora } from './compartir';
+import { PERMISOS, fechaHora } from './compartir';
 import { CopiarUrl } from './copiar-url';
 
 /** Links vigentes del usuario: archivos, expiración, switch activo/inactivo (PATCH) y URL para copiar. */
@@ -29,7 +29,7 @@ import { CopiarUrl } from './copiar-url';
             @for (l of links(); track l.token) {
               <li>
                 <span class="nombre">{{ nombres(l) || 'Sus archivos ya se eliminaron' }}</span>
-                <span class="ayuda">{{ l.archivos.length }} {{ l.archivos.length === 1 ? 'archivo' : 'archivos' }} · Vence: {{ fecha(l.expiresAt) }}</span>
+                <span class="ayuda">{{ l.archivos.length }} {{ l.archivos.length === 1 ? 'archivo' : 'archivos' }} · {{ permiso(l) }} · Vence: {{ fecha(l.expiresAt) }}</span>
                 <span class="acciones">
                   <label class="casilla">
                     <input type="checkbox" role="switch" [attr.aria-label]="'Link activo: ' + nombres(l)" [checked]="l.activo"
@@ -75,6 +75,10 @@ export class Links {
   /** El backend no conserva el orden en que se eligieron (SS): se ordenan por nombre. */
   protected nombres(l: Link) {
     return l.archivos.map((a) => a.nombre).sort((a, b) => a.localeCompare(b, 'es')).join(', ');
+  }
+
+  protected permiso(l: Link) {
+    return PERMISOS.find((p) => p.valor === l.permiso)?.texto;
   }
 
   /** Mismo valor que arma mh-links con ALLOWED_ORIGIN mientras el front se sirva desde ese origen. */

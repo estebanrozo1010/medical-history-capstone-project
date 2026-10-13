@@ -93,7 +93,10 @@ public class LinksHandler implements RequestHandler<APIGatewayProxyRequestEvent,
       return switch (ruta) {
         case "POST /links" -> {
           Map<String, Object> m = objeto(evento.getBody());
-          LinkGuardado l = servicio.crear(sub, fileIds(m), entero(m, "ttlMinutos"));
+          // Sin permiso: ambos. Uno que no es texto llega como null y el servicio responde 400
+          Object permiso = m.get("permiso");
+          LinkGuardado l = servicio.crear(sub, fileIds(m), entero(m, "ttlMinutos"),
+              permiso == null ? "ambos" : permiso instanceof String p ? p : null);
           log("LINK_CREADO", l.token(), l.fileIds().size());
           Map<String, Object> body = new LinkedHashMap<>();
           body.put("token", l.token());
@@ -119,13 +122,14 @@ public class LinksHandler implements RequestHandler<APIGatewayProxyRequestEvent,
           log("LINK_RESUELTO", token, r.get().archivos().size());
           Map<String, Object> body = new LinkedHashMap<>();
           body.put("expiresAt", r.get().link().expiresAt());
+          body.put("permiso", r.get().link().permiso());
           body.put("archivos", r.get().archivos().stream().map(a -> Map.of("fileId", a.fileId(), "nombre", a.nombre(),
               "contentType", a.contentType(), "size", a.size())).toList());
           yield respuesta(200, body);
         }
         case "GET /s/{token}/files/{fileId}" -> {
           String token = evento.getPathParameters().get("token");
-          // ?modo=ver lo muestra en el navegador; sin él (o con otro valor) se descarga
+          // ?modo=ver lo muestra en el navegador; sin él (o con otro valor) se descarga. El permiso del link manda
           boolean ver = evento.getQueryStringParameters() != null
               && "ver".equals(evento.getQueryStringParameters().get("modo"));
           Optional<String> url = servicio.urlDescarga(token, evento.getPathParameters().get("fileId"), ver);
@@ -170,6 +174,7 @@ public class LinksHandler implements RequestHandler<APIGatewayProxyRequestEvent,
     m.put("archivos", d.archivos().stream().map(a -> Map.of("fileId", a.fileId(), "nombre", a.nombre())).toList());
     m.put("activo", d.link().activo());
     m.put("expiresAt", d.link().expiresAt());
+    m.put("permiso", d.link().permiso());
     return m;
   }
 

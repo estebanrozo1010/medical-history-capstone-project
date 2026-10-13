@@ -6,6 +6,9 @@ import { Config } from '../config';
 
 export const MAX_ARCHIVOS_POR_LINK = 50;
 
+/** Qué puede hacer quien recibe el link con cada archivo; el backend lo hace cumplir al firmar. */
+export type Permiso = 'ambos' | 'ver' | 'descargar';
+
 export interface ArchivoDeLink {
   fileId: string;
   nombre: string;
@@ -17,6 +20,7 @@ export interface Link {
   archivos: ArchivoDeLink[];
   activo: boolean;
   expiresAt: number;
+  permiso: Permiso;
 }
 
 /** Respuesta de POST /links: url = {origen del front}/compartido/{token}. */
@@ -39,9 +43,9 @@ export class LinksApi {
     return `${this.config.value.apiUrl}/links`;
   }
 
-  crear(archivos: ArchivoDeLink[], ttlMinutos: number) {
-    return this.http.post<LinkCreado>(this.url, { fileIds: archivos.map((a) => a.fileId), ttlMinutos }).pipe(
-      tap((c) => this.recientes.update((l) => [{ token: c.token, archivos, activo: true, expiresAt: c.expiresAt }, ...l])),
+  crear(archivos: ArchivoDeLink[], ttlMinutos: number, permiso: Permiso) {
+    return this.http.post<LinkCreado>(this.url, { fileIds: archivos.map((a) => a.fileId), ttlMinutos, permiso }).pipe(
+      tap((c) => this.recientes.update((l) => [{ token: c.token, archivos, activo: true, expiresAt: c.expiresAt, permiso }, ...l])),
     );
   }
 

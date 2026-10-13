@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DOCUMENT, Injector, afterNextRender, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { LinkCreado, LinksApi } from '../../core/api/links.api';
+import { LinkCreado, LinksApi, Permiso } from '../../core/api/links.api';
 import { CopiarUrl } from './copiar-url';
 import { Seleccion } from './seleccion';
 
@@ -13,7 +13,13 @@ export const DURACIONES = [
   { minutos: 1440, texto: '24 horas' },
 ];
 
-export const fechaHora = (segundos: number) =>
+export const PERMISOS: { valor: Permiso; texto: string }[] = [
+  { valor: 'ambos', texto: 'Ver y descargar' },
+  { valor: 'ver', texto: 'Solo ver' },
+  { valor: 'descargar', texto: 'Solo descargar' },
+];
+
+export const fechaHora =(segundos: number) =>
   new Date(segundos * 1000).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' });
 
 const mensajeError = (e: unknown) => {
@@ -48,6 +54,18 @@ const mensajeError = (e: unknown) => {
               }
             </select>
           </div>
+          <div class="campo">
+            <label for="permiso">Quien lo reciba puede</label>
+            <select id="permiso" [attr.aria-describedby]="permiso() === 'ver' ? 'permiso-ayuda' : null"
+              (change)="permiso.set($any($event.target).value)">
+              @for (p of permisos; track p.valor) {
+                <option [value]="p.valor" [selected]="p.valor === permiso()">{{ p.texto }}</option>
+              }
+            </select>
+            @if (permiso() === 'ver') {
+              <p id="permiso-ayuda" class="ayuda">Solo ver no impide guardar una copia: el navegador puede guardar lo que muestra.</p>
+            }
+          </div>
           <button [disabled]="ocupado()" (click)="crear()">Crear link</button>
           <button class="secundario" [disabled]="ocupado()" (click)="seleccion.limpiar()">Quitar selección</button>
         </section>
@@ -74,6 +92,8 @@ export class Compartir {
   protected readonly seleccion = inject(Seleccion);
   protected readonly duraciones = DURACIONES;
   protected readonly ttl = signal(60);
+  protected readonly permisos = PERMISOS;
+  protected readonly permiso = signal<Permiso>('ambos');
   protected readonly ocupado = signal(false);
   protected readonly creado = signal<LinkCreado | null>(null);
   protected readonly aviso = signal('');
@@ -89,7 +109,7 @@ export class Compartir {
     this.aviso.set('');
     this.error.set('');
     try {
-      this.creado.set(await firstValueFrom(this.api.crear(this.seleccion.archivos(), this.ttl())));
+      this.creado.set(await firstValueFrom(this.api.crear(this.seleccion.archivos(), this.ttl(), this.permiso())));
       this.seleccion.limpiar();
       this.aviso.set('Link creado. Copia el enlace para compartirlo.');
       // El botón Crear link desaparece con la selección: el foco va al título del link creado

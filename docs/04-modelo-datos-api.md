@@ -38,6 +38,7 @@ Estados que escribe `mh-postscan` (ver [02](02-backend.md)): `CLEAN` (descargabl
 | `token` (PK) | S | 32 bytes aleatorios, base64url |
 | `userSub` | S | dueño |
 | `fileIds` | SS | 1–50 archivos del mismo dueño, cualquier carpeta |
+| `permiso` | S | `ver`, `descargar` o `ambos` (por defecto). Los links creados antes de este atributo se leen como `ambos` |
 | `activo` | BOOL | switch manual |
 | `expiresAt` | N | epoch seconds, **atributo TTL** |
 | `createdAt` | N | |
@@ -88,11 +89,11 @@ Tipos permitidos: `application/pdf`, `image/jpeg`, `image/png`, `video/mp4`. Tam
 ### Links (`mh-links`)
 | Método y ruta | Body | Respuesta |
 |---|---|---|
-| `POST /links` | `{fileIds[1..50], ttlMinutos (1–1440)}` | `201 {token, url, expiresAt}` · `400` si la cantidad, el TTL o el body no son válidos, o hay `fileIds` repetidos · `404` si alguno no es del usuario (se revisa antes que el estado) · `409` si alguno no está `CLEAN` |
-| `GET /links` | — | `200 [{token, archivos:[{fileId, nombre}], activo, expiresAt}]`: solo los vigentes (`expiresAt` validado en código), del más nuevo al más viejo; un archivo eliminado ya no aparece en `archivos` |
+| `POST /links` | `{fileIds[1..50], ttlMinutos (1–1440), permiso?}` (`ver`, `descargar` o `ambos`; sin él, `ambos`) | `201 {token, url, expiresAt}` · `400` si la cantidad, el TTL o el body no son válidos, o hay `fileIds` repetidos, o el `permiso` no es uno de los tres · `404` si alguno no es del usuario (se revisa antes que el estado) · `409` si alguno no está `CLEAN` |
+| `GET /links` | — | `200 [{token, archivos:[{fileId, nombre}], activo, expiresAt, permiso}]`: solo los vigentes (`expiresAt` validado en código), del más nuevo al más viejo; un archivo eliminado ya no aparece en `archivos` |
 | `PATCH /links/{token}` | `{activo}` (booleano) | `200 {token, activo, expiresAt}` · `404` si es ajeno, no existe o ya venció (misma respuesta) · `400` si `activo` no es booleano |
-| `GET /s/{token}` *(pública)* | — | `200 {expiresAt, archivos:[{fileId, nombre, contentType, size}]}` (solo los `CLEAN` que aún existen; sin orden garantizado porque `fileIds` es un `SS`; puede venir vacía) · `410 NO_DISPONIBLE` si no existe, está apagado, venció o el token está mal formado (la misma respuesta en todos los casos) |
-| `GET /s/{token}/files/{fileId}` *(pública)* | `?modo=ver` opcional | `302` con `Location` a un GET firmado de 1 min con `response-content-disposition`: `attachment` (descargar, como `download-url`) o, con `modo=ver`, `inline` (el navegador lo muestra: PDF, imagen o video), con el mismo nombre · `410` igual que arriba · `404` si el archivo no pertenece al link, ya no existe o no está `CLEAN` |
+| `GET /s/{token}` *(pública)* | — | `200 {expiresAt, permiso, archivos:[{fileId, nombre, contentType, size}]}` (solo los `CLEAN` que aún existen; sin orden garantizado porque `fileIds` es un `SS`; puede venir vacía) · `410 NO_DISPONIBLE` si no existe, está apagado, venció o el token está mal formado (la misma respuesta en todos los casos) |
+| `GET /s/{token}/files/{fileId}` *(pública)* | `?modo=ver` opcional | `302` con `Location` a un GET firmado de 1 min con `response-content-disposition`: `attachment` (descargar, como `download-url`) o, con `modo=ver`, `inline` (el navegador lo muestra: PDF, imagen o video), con el mismo nombre; el `permiso` del link manda sobre `modo`: `ver` firma siempre `inline` y `descargar` siempre `attachment` (cambiar la URL no habilita lo otro; "solo ver" no impide que el navegador guarde una copia) · `410` igual que arriba · `404` si el archivo no pertenece al link, ya no existe o no está `CLEAN` |
 
 Todas las respuestas de `mh-links` llevan `Cache-Control: no-store` (un 410 se guarda en caché por defecto y el link se puede volver a encender; el 302 lleva una URL firmada). Las dos rutas públicas no llevan authorizer; el `GET` sin `Authorization` no necesita preflight de CORS.
 

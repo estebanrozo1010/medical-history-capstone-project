@@ -27,7 +27,8 @@ public class DynamoLinkRepositorio implements LinkRepositorio {
   public void crear(LinkGuardado l) {
     dynamo.putItem(r -> r.tableName(tabla)
         .item(Map.of("token", s(l.token()), "userSub", s(l.userSub()), "fileIds", AttributeValue.fromSs(l.fileIds()),
-            "activo", AttributeValue.fromBool(l.activo()), "expiresAt", n(l.expiresAt()), "createdAt", n(l.createdAt())))
+            "activo", AttributeValue.fromBool(l.activo()), "expiresAt", n(l.expiresAt()), "createdAt", n(l.createdAt()),
+            "permiso", s(l.permiso())))
         .conditionExpression("attribute_not_exists(#t)").expressionAttributeNames(TOKEN));
   }
 
@@ -60,7 +61,9 @@ public class DynamoLinkRepositorio implements LinkRepositorio {
 
   private static LinkGuardado link(Map<String, AttributeValue> i) {
     return new LinkGuardado(i.get("token").s(), i.get("userSub").s(), i.get("fileIds").ss(), i.get("activo").bool(),
-        Long.parseLong(i.get("expiresAt").n()), Long.parseLong(i.get("createdAt").n()));
+        Long.parseLong(i.get("expiresAt").n()), Long.parseLong(i.get("createdAt").n()),
+        // Los links creados antes del permiso no lo traen: permitían ver y descargar
+        i.containsKey("permiso") ? i.get("permiso").s() : "ambos");
   }
 
   private static AttributeValue s(String v) {

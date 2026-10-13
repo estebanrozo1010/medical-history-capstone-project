@@ -11,7 +11,7 @@ import { Link, LinksApi } from './links.api';
 const API = 'https://api.test/v1';
 const turno = () => new Promise((r) => setTimeout(r));
 const VENCE = Math.floor(Date.now() / 1000) + 3600;
-const link = (token: string, activo = true): Link => ({ token, archivos: [{ fileId: 'f1', nombre: 'a.pdf' }], activo, expiresAt: VENCE });
+const link = (token: string, activo = true): Link => ({ token, archivos: [{ fileId: 'f1', nombre: 'a.pdf' }], activo, expiresAt: VENCE, permiso: 'ambos' });
 
 describe('LinksApi', () => {
   let api: LinksApi;
@@ -36,18 +36,18 @@ describe('LinksApi', () => {
 
   const crear = async (token: string) => {
     let creado: unknown;
-    api.crear([{ fileId: 'f1', nombre: 'a.pdf' }, { fileId: 'f2', nombre: 'b.pdf' }], 60).subscribe((c) => (creado = c));
+    api.crear([{ fileId: 'f1', nombre: 'a.pdf' }, { fileId: 'f2', nombre: 'b.pdf' }], 60, 'ver').subscribe((c) => (creado = c));
     await turno();
     const req = backend.expectOne(`${API}/links`);
     req.flush({ token, url: `http://localhost:4200/compartido/${token}`, expiresAt: VENCE }, { status: 201, statusText: 'Created' });
     return { req, creado };
   };
 
-  it('crear hace POST {apiUrl}/links con los fileIds y ttlMinutos, con el token', async () => {
+  it('crear hace POST {apiUrl}/links con los fileIds, ttlMinutos y permiso, con el token', async () => {
     const { req, creado } = await crear('t1');
     expect(req.request.method).toBe('POST');
     expect(req.request.headers.get('Authorization')).toBe('Bearer tok');
-    expect(req.request.body).toEqual({ fileIds: ['f1', 'f2'], ttlMinutos: 60 });
+    expect(req.request.body).toEqual({ fileIds: ['f1', 'f2'], ttlMinutos: 60, permiso: 'ver' });
     expect(creado).toEqual({ token: 't1', url: 'http://localhost:4200/compartido/t1', expiresAt: VENCE });
   });
 
@@ -59,7 +59,7 @@ describe('LinksApi', () => {
     backend.expectOne(`${API}/links`).flush([link('viejo')]);
 
     expect(lista.map((l) => l.token)).toEqual(['nuevo', 'viejo']);
-    expect(lista[0]).toEqual({ token: 'nuevo', activo: true, expiresAt: VENCE,
+    expect(lista[0]).toEqual({ token: 'nuevo', activo: true, expiresAt: VENCE, permiso: 'ver',
       archivos: [{ fileId: 'f1', nombre: 'a.pdf' }, { fileId: 'f2', nombre: 'b.pdf' }] });
   });
 

@@ -15,7 +15,7 @@ const archivo = (fileId: string, status: Archivo['status'] = 'CLEAN', carpeta = 
   fileId, carpeta, nombre: `${fileId}.pdf`, contentType: 'application/pdf', size: 1000, status, createdAt: AHORA,
 });
 const link = (token: string, activo = true, nombres = ['b.pdf', 'a.pdf']): Link => ({
-  token, activo, expiresAt: AHORA + 3600, archivos: nombres.map((n) => ({ fileId: `id-${n}`, nombre: n })),
+  token, activo, expiresAt: AHORA + 3600, archivos: nombres.map((n) => ({ fileId: `id-${n}`, nombre: n })), permiso: 'ambos',
 });
 const errorHttp = (status: number, message?: string) =>
   throwError(() => new HttpErrorResponse({ status, error: message ? { code: 'X', message } : null }));
@@ -153,18 +153,35 @@ describe('Compartir', () => {
       expect(select.value).toBe('60');
     });
 
+    it('el permiso es ver y descargar por defecto; solo ver avisa que no impide guardar una copia', async () => {
+      const el = await preparar();
+      const select = el.querySelector<HTMLSelectElement>('#permiso')!;
+      expect(el.querySelector('label[for=permiso]')).toBeTruthy();
+      expect([...select.options].map((o) => `${o.value}:${o.textContent!.trim()}`)).toEqual(['ambos:Ver y descargar', 'ver:Solo ver', 'descargar:Solo descargar']);
+      expect(select.value).toBe('ambos');
+      expect(el.textContent).not.toContain('no impide');
+
+      select.value = 'ver';
+      select.dispatchEvent(new Event('change'));
+      await listo();
+      expect(el.querySelector(`#${select.getAttribute('aria-describedby')}`)?.textContent).toContain('no impide');
+    });
+
     it('crea el link con los archivos de varias carpetas, muestra la URL, limpia la selección y lleva el foco', async () => {
       links.crear.mockReturnValue(of({ token: 'tok123', url: 'http://localhost:4200/compartido/tok123', expiresAt: AHORA + 7200 }));
       const el = await preparar();
       const select = el.querySelector<HTMLSelectElement>('#duracion')!;
       select.value = '120';
       select.dispatchEvent(new Event('change'));
+      const permiso = el.querySelector<HTMLSelectElement>('#permiso')!;
+      permiso.value = 'descargar';
+      permiso.dispatchEvent(new Event('change'));
       await listo();
 
       boton(el, 'Crear link').click();
       await listo();
 
-      expect(links.crear).toHaveBeenCalledWith([{ fileId: 'eco', nombre: 'eco.pdf' }, { fileId: 'l1', nombre: 'l1.pdf' }], 120);
+      expect(links.crear).toHaveBeenCalledWith([{ fileId: 'eco', nombre: 'eco.pdf' }, { fileId: 'l1', nombre: 'l1.pdf' }], 120, 'descargar');
       expect(el.querySelector<HTMLInputElement>('#url-creada')!.value).toBe('http://localhost:4200/compartido/tok123');
       expect(el.querySelector<HTMLInputElement>('#url-creada')!.readOnly).toBe(true);
       expect(estados(el)).toContain('Link creado');
@@ -266,7 +283,7 @@ describe('Compartir', () => {
 
   describe('/links', () => {
     it('lista los links con sus archivos ordenados por nombre, la expiración, el switch y la URL', async () => {
-      links.listar.mockReturnValue(of([link('t1'), link('t2', false, ['z.pdf'])]));
+      links.listar.mockReturnValue(of([link('t1'), { ...link('t2', false, ['z.pdf']), permiso: 'ver' }]));
       const el = await crear(Links);
 
       const items = el.querySelectorAll('.lista li');
@@ -274,6 +291,8 @@ describe('Compartir', () => {
       expect(items[0].textContent).toContain('a.pdf, b.pdf');
       expect(items[0].textContent).toContain('2 archivos');
       expect(items[0].textContent).toContain('Vence');
+      expect(items[0].textContent).toContain('Ver y descargar');
+      expect(items[1].textContent).toContain('Solo ver');
       const switches = el.querySelectorAll<HTMLInputElement>('input[role=switch]');
       expect([...switches].map((s) => s.checked)).toEqual([true, false]);
       expect(switches[0].getAttribute('aria-label')).toBe('Link activo: a.pdf, b.pdf');

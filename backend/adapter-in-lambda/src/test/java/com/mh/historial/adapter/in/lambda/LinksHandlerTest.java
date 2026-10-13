@@ -50,6 +50,19 @@ class LinksHandlerTest {
     assertEquals(Map.of("token", token, "url", "http://localhost:4200/compartido/" + token,
         "expiresAt", (int) (AHORA + 1800)), json);
     assertEquals("sub-a", links.datos.get(token).userSub());
+    // Sin permiso en el body: ambos (lo que hacían los links antes del permiso)
+    assertEquals("ambos", links.datos.get(token).permiso());
+  }
+
+  @Test
+  void postGuardaElPermisoElegido() throws Exception {
+    archivo("sub-a", "f1", "CLEAN");
+
+    APIGatewayProxyResponseEvent r = handler.handleRequest(
+        peticion("POST", "/links", "sub-a", "{\"fileIds\":[\"f1\"],\"ttlMinutos\":30,\"permiso\":\"ver\"}", null), null);
+
+    assertEquals(201, r.getStatusCode());
+    assertEquals("ver", links.datos.get((String) JSON.std.mapFrom(r.getBody()).get("token")).permiso());
   }
 
   @Test
@@ -59,7 +72,9 @@ class LinksHandlerTest {
         "{\"fileIds\":\"f1\",\"ttlMinutos\":10}", "{\"fileIds\":[1],\"ttlMinutos\":10}",
         "{\"fileIds\":[\"f1\"]}", "{\"fileIds\":[\"f1\"],\"ttlMinutos\":\"10\"}",
         "{\"fileIds\":[\"f1\"],\"ttlMinutos\":10.5}", "{\"fileIds\":[\"f1\"],\"ttlMinutos\":0}",
-        "{\"fileIds\":[\"f1\",\"f1\"],\"ttlMinutos\":10}", "{\"fileIds\":[],\"ttlMinutos\":10}"}) {
+        "{\"fileIds\":[\"f1\",\"f1\"],\"ttlMinutos\":10}", "{\"fileIds\":[],\"ttlMinutos\":10}",
+        "{\"fileIds\":[\"f1\"],\"ttlMinutos\":10,\"permiso\":\"otro\"}",
+        "{\"fileIds\":[\"f1\"],\"ttlMinutos\":10,\"permiso\":1}"}) {
       APIGatewayProxyResponseEvent r = handler.handleRequest(peticion("POST", "/links", "sub-a", body, null), null);
       assertEquals(400, r.getStatusCode(), "body: " + body);
       assertEquals("VALIDACION", JSON.std.mapFrom(r.getBody()).get("code"));
@@ -95,7 +110,7 @@ class LinksHandlerTest {
 
     assertEquals(200, r.getStatusCode());
     assertEquals(List.of(Map.of("token", token, "archivos", List.of(Map.of("fileId", "f1", "nombre", "f1.pdf")),
-        "activo", true, "expiresAt", (int) (AHORA + 600))), JSON.std.listFrom(r.getBody()));
+        "activo", true, "expiresAt", (int) (AHORA + 600), "permiso", "ambos")), JSON.std.listFrom(r.getBody()));
   }
 
   @Test
@@ -170,8 +185,8 @@ class LinksHandlerTest {
     APIGatewayProxyResponseEvent r = handler.handleRequest(publica("/s/{token}", token, null), null);
 
     assertEquals(200, r.getStatusCode());
-    assertEquals(Map.of("expiresAt", (int) (AHORA + 600), "archivos", List.of(Map.of("fileId", "f1", "nombre", "f1.pdf",
-        "contentType", "application/pdf", "size", 1))), JSON.std.mapFrom(r.getBody()));
+    assertEquals(Map.of("expiresAt", (int) (AHORA + 600), "permiso", "ambos", "archivos", List.of(Map.of("fileId",
+        "f1", "nombre", "f1.pdf", "contentType", "application/pdf", "size", 1))), JSON.std.mapFrom(r.getBody()));
     assertEquals("http://localhost:4200", r.getHeaders().get("Access-Control-Allow-Origin"));
     assertEquals("no-store", r.getHeaders().get("Cache-Control"));
   }
@@ -239,6 +254,29 @@ class LinksHandlerTest {
   }
 
   @Test
+  void elPermisoDelLinkMandaSobreElModoDeLaUrl() {
+    archivo("sub-a", "f1", "CLEAN");
+    String soloVer = crearConPermiso("ver");
+    String soloDescargar = crearConPermiso("descargar");
+
+    handler.handleRequest(publica("/s/{token}/files/{fileId}", soloVer, "f1"), null);
+    assertTrue(almacen.disposicion.startsWith("inline; "), almacen.disposicion);
+    handler.handleRequest(publica("/s/{token}/files/{fileId}", soloDescargar, "f1")
+        .withQueryStringParameters(Map.of("modo", "ver")), null);
+    assertTrue(almacen.disposicion.startsWith("attachment; "), almacen.disposicion);
+  }
+
+  @Test
+  void getPublicoDevuelveElPermisoDelLink() throws Exception {
+    archivo("sub-a", "f1", "CLEAN");
+
+    APIGatewayProxyResponseEvent r = handler.handleRequest(publica("/s/{token}", crearConPermiso("descargar"), null),
+        null);
+
+    assertEquals("descargar", JSON.std.mapFrom(r.getBody()).get("permiso"));
+  }
+
+  @Test
   void descargaDeUnFileIdFueraDelLinkResponde404() throws Exception {
     archivo("sub-a", "f1", "CLEAN");
     archivo("sub-a", "f2", "CLEAN");
@@ -293,6 +331,16 @@ class LinksHandlerTest {
     }
   }
 
+  String crearConPermiso(String permiso) {
+    try {
+      return (String) JSON.std.mapFrom(handler.handleRequest(peticion("POST", "/links", "sub-a",
+          "{\"fileIds\":[\"f1\"],\"ttlMinutos\":10,\"permiso\":\"" + permiso + "\"}", null), null).getBody())
+          .get("token");
+    } catch (java.io.IOException e) {
+      throw new java.io.UncheckedIOException(e);
+    }
+  }
+
   static APIGatewayProxyRequestEvent patch(String sub, String token, String body) {
     return peticion("PATCH", "/links/{token}", sub, body, null).withPathParameters(Map.of("token", token));
   }
@@ -323,7 +371,8 @@ class LinksHandlerTest {
     @Override
     public boolean cambiarActivo(String token, boolean activo) {
       LinkGuardado l = datos.get(token);
-      datos.put(token, new LinkGuardado(l.token(), l.userSub(), l.fileIds(), activo, l.expiresAt(), l.createdAt()));
+      datos.put(token,
+          new LinkGuardado(l.token(), l.userSub(), l.fileIds(), activo, l.expiresAt(), l.createdAt(), l.permiso()));
       return true;
     }
   }
