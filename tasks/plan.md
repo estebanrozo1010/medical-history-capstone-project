@@ -200,12 +200,13 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 #### Tarea 11: Subida multipart (archivos grandes)
 **Descripción:** Endpoints `multipart/start|part-url|complete|abort` y subida en partes de 16 MB (3 en paralelo) en el front para archivos mayores a 100 MB.
 **Criterios de aceptación:**
-- [ ] Un video de unos 200 MB se sube y queda `CLEAN`
-- [ ] Si falla una parte se puede reintentar; `abort` limpia lo subido
+- [ ] Un video de unos 200 MB se sube y queda `CLEAN` (11a con curl el 2026-10-12: 13 partes de 16 MB, `CLEAN` a los 8 s del `complete` y réplica `COMPLETED` a los 17 s; falta por la UI en 11b)
+- [ ] Si falla una parte se puede reintentar; `abort` limpia lo subido (11a con curl: parte con otro tamaño → 403 y reintento OK; `abort` → 204 y `list-multipart-uploads` vacío; falta por la UI en 11b)
+- [x] 11a: `uploadId` ajeno a la clave → 404; fileId de otro usuario → 404; registro no `PENDING` → 409; `DELETE` de un `PENDING` aborta sus partes en curso (curl contra la API real)
 **Verificación:** prueba manual con un archivo grande; test del servicio de partes.
 **Dependencias:** Tarea 10
 **Archivos probables:** `backend/adapter-out-s3/Multipart*`, `backend/application/files/*`, `frontend/src/app/features/upload/multipart.service.ts`
-**Alcance:** M
+**Alcance:** M (dividida en 11a backend y 11b UI)
 
 ### Checkpoint 3: Archivos
 - [x] Subir, escanear, listar, descargar y eliminar funciona de punta a punta
