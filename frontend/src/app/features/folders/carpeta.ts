@@ -15,7 +15,7 @@ export const ESTADOS: Record<Archivo['status'], string> = {
   UPLOAD_EXPIRED: 'Subida vencida',
 };
 
-const tamano = (b: number) => {
+export const tamano = (b: number) => {
   const [valor, unidad] = b < 1024 ? [b, 'B'] : b < 1024 ** 2 ? [b / 1024, 'KB'] : b < 1024 ** 3 ? [b / 1024 ** 2, 'MB'] : [b / 1024 ** 3, 'GB'];
   return `${valor.toLocaleString('es-CO', { maximumFractionDigits: 1 })} ${unidad}`;
 };

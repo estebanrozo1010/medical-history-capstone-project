@@ -265,12 +265,47 @@ El priming va en el constructor de `ProfileHandler` (se ejecuta antes del snapsh
 #### Tarea 15: Pantalla pública `/compartido/:token`
 **Descripción:** Vista sin sesión que lista los archivos del link con tamaño y botón de descarga por archivo; mensaje "enlace no disponible" ante 410.
 **Criterios de aceptación:**
-- [ ] Funciona en ventana privada, sin interceptor de token
-- [ ] Muestra "enlace no disponible" con link apagado o vencido
+- [x] Funciona en ventana privada, sin interceptor de token
+- [x] Muestra "enlace no disponible" con link apagado o vencido
 **Verificación:** `ng test --watch=false`; prueba manual en ventana privada.
+**Prueba real (2026-10-13):** `ng serve` en un Chrome sin sesión (sin claves de Cognito en `localStorage`, sin menú): `/compartido/inventado-tarea15` abre sin pasar por `/login`, hace un solo `GET /s/{token}` (sin `OPTIONS`: no lleva `Authorization`) → 410 con `Access-Control-Allow-Origin` y muestra "Enlace no disponible", sin errores en consola. El 410 es idéntico para apagado, vencido e inexistente (Tarea 13). Con sesión, el test con el interceptor real confirma que tampoco se manda `Authorization` (falla si se usa el `HttpClient` normal). `ng test` (89) y `ng build` sin warnings. **Falta:** el caso 200 con un link real (Ver/Descargar de 2 archivos, apagar → 410, vencido de 15 min), que necesita sesión para crear el link; queda en el Checkpoint 4.
+**Decisiones de la 15:** `CompartidoApi` usa `new HttpClient(inject(HttpBackend))` para saltar los interceptores (no se toca `authInterceptor`). Ver y Descargar son `<a href>` a `{apiUrl}/s/{token}/files/{fileId}[?modo=ver]` (Ver con `target=_blank rel=noopener`, Descargar en la misma pestaña). Recarga silenciosa en `visibilitychange` (visible) y `pageshow` (vuelta con Atrás desde bfcache); si la lista pasa a 410 o error, el foco va al `h1`, que cambia a "Enlace no disponible". Vencimiento como fecha y hora (`fechaHora`), sin cuenta regresiva. Encabezado global sin menú; sin enlace a login. `tamano` se exporta desde `folders/carpeta.ts`.
 **Dependencias:** Tarea 13
 **Archivos probables:** `frontend/src/app/features/share/public-view/*`
 **Lo que deja la Tarea 13:** `GET {apiUrl}/s/{token}` → `200 {expiresAt, archivos:[{fileId, nombre, contentType, size}]}` (puede venir vacía) o `410 {code: NO_DISPONIBLE}`. Por archivo, dos botones que **navegan** (no `HttpClient`, sin CORS): **Ver** → `{apiUrl}/s/{token}/files/{fileId}?modo=ver` (en otra pestaña) y **Descargar** → la misma URL sin `modo`. Un 404 en un archivo (eliminado o rechazado después de cargar la lista) o un 410 (apagado a mitad) los muestra el navegador como JSON: conviene recargar la lista al volver. La URL firmada dura 1 min, así que se pide al hacer clic, nunca se guarda. La lista no viene en el orden en que se eligieron (`SS`): ordenarla en el front (p. ej. por nombre).
+**Lo que deja la Tarea 14:**
+- Hoy la URL copiada (`/compartido/{token}`) cae en el comodín `{ path: '**', redirectTo: 'perfil' }` de `app.routes.ts`; `/perfil` tiene `authGuard`, así que sin sesión lleva a `/login`. La ruta nueva va **sin guard y antes del comodín**.
+- `authInterceptor` le pone el ID token a toda URL que empiece con `apiUrl`: `GET {apiUrl}/s/{token}` debe salir **sin** `Authorization` (si no, lleva preflight de CORS y, sin sesión, el interceptor puede mandar a `/login`).
+- `features/share/` ya tiene `Seleccion`, `Compartir`, `CopiarUrl` y `Links`; la pantalla pública va en `features/share/public-view/` y no reutiliza `LinksApi` (esa usa rutas con token).
+- Para probar: `/links` muestra los links vigentes con su URL y su switch, incluido el apagado en la prueba de la 14 (vence el 2026-10-13 00:08), útil para el caso 410.
+- El menú del encabezado solo aparece con sesión (`auth.email()`), así que en ventana privada no se muestra.
+
+**Prompt para ejecutarla:**
+```text
+/agent-skills:build Tarea 15 del plan (pantalla pública /compartido/:token)
+
+Lee README.md, tasks/plan.md (Tarea 15 con "Lo que deja la Tarea 13" y "Lo que deja la Tarea 14", Checkpoint 4, "Decisiones de la 13" y "Decisiones de la 14"), tasks/todo.md, docs/03-frontend.md, docs/04-modelo-datos-api.md (GET /s/{token} y GET /s/{token}/files/{fileId}) y docs/07-learner-lab.md. Estamos en el AWS Academy Learner Lab (us-east-1). Las Tareas 1 a 10, la 11a y de la 12 a la 14 están hechas (último commit de la 14: 8478c0c). La 11b (UI multipart) puede estar en curso en otra sesión: no toques frontend/src/app/features/upload. Responde en español latino.
+
+Contexto frontend: Angular con standalone components; AuthService, authInterceptor (agrega el ID token a toda URL que empiece con apiUrl) y authGuard en core/auth; apiUrl en config.json (AppConfig). La ruta comodín '**' redirige a /perfil (con guard), por eso hoy el link compartido lleva al login. features/share ya tiene Seleccion, Compartir, CopiarUrl y /links (Tarea 14).
+
+Contexto backend (ya desplegado, no cambia): GET /s/{token} (pública) → 200 {expiresAt, archivos:[{fileId, nombre, contentType, size}]} solo los CLEAN que existen, sin orden garantizado y puede venir vacía; 410 {code: NO_DISPONIBLE} idéntico para apagado, vencido, inexistente o mal formado. GET /s/{token}/files/{fileId} (pública) → 302 a un GET firmado de 1 min: con ?modo=ver inline, sin él attachment; 404 si el archivo no está en el link, se eliminó o no está CLEAN; 410 como arriba. Cache-Control: no-store. Un GET sin Authorization no lleva preflight de CORS. API base: https://a96z09c5qh.execute-api.us-east-1.amazonaws.com/v1.
+
+Alcance:
+- Ruta /compartido/:token sin guard y antes del comodín.
+- GET /s/{token} sin Authorization (que el interceptor no lo toque).
+- Lista ordenada por nombre con tamaño; por archivo, Ver (en otra pestaña) y Descargar, que navegan a {apiUrl}/s/{token}/files/{fileId}[?modo=ver] (sin HttpClient), con aria-label por archivo.
+- 410 → "enlace no disponible"; lista vacía → mensaje propio; red o 500 → role=alert; carga con role=status; accesibilidad como en 10b.
+- Recargar la lista al volver a la pestaña (un 404 o 410 de un archivo lo muestra el navegador como JSON).
+- Propón antes de hacerlo: (1) cómo saltar el interceptor (HttpContext, excluir rutas /s/ en el interceptor o HttpBackend); (2) qué encabezado ve quien no tiene sesión; (3) Ver y Descargar como <a href> (target=_blank, rel=noopener) o como botones; (4) cuándo recargar la lista (visibilitychange, tras volver de Ver); (5) cómo mostrar expiresAt (fecha y hora o tiempo restante).
+
+Fuera de alcance: backend (salvo un bug real; avísame antes); publicación en S3 y CORS del sitio (Tarea 16).
+
+Verificación: tests primero; ng test --watch=false y ng build sin warnings; flujo manual con ng serve en una ventana privada (sin sesión): crear en la app un link con 2 archivos, abrir su URL en la ventana privada, ver y descargar ambos, comprobar en la pestaña Network que GET /s/{token} no lleva Authorization; apagarlo con el switch en /links, recargar la ventana privada y ver "enlace no disponible"; lo mismo con un link vencido (15 min). Para curl, genera los tokens con infra/id-token.mjs (MH_EMAIL y MH_PASSWORD por variable de entorno) en %TEMP%\mh-token.txt; no escribas la contraseña en ningún archivo.
+
+Haz un commit al terminar y marca la tarea en tasks/todo.md y sus criterios en tasks/plan.md (el Checkpoint 4 queda para mi revisión). Al final dime qué queda para la Tarea 16.
+
+Notas del entorno: en este equipo (Git Bash) los heredocs largos fallan; crea los archivos grandes con la herramienta Write. Mi terminal es PowerShell 5.1: si me das comandos, que sean para PowerShell (sin &&) y sin marcadores tipo <args>.
+```
 **Alcance:** S
 
 ### Checkpoint 4: Links
