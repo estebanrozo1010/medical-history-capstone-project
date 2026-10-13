@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  mh-edge (PoC Learner Lab): sitio estatico de S3 publico (HTTP) para el frontend.
+  CloudFront esta bloqueado en el lab; la version objetivo (CloudFront + OAC + WAF) esta en docs/01.
+Resources:
+  FrontBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # Mismo nombre que permite el CORS del bucket de documentos en mh-base
+      BucketName: !Sub 'mh-front-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        # SPA: /carpetas o /compartido/{token} no existen como objeto y caen aqui (con estado 404)
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+      OwnershipControls:
+        Rules: [{ObjectOwnership: BucketOwnerEnforced}]
+
+  FrontBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Solo lectura de objetos; sin s3:ListBucket, el contenido del bucket no se puede listar
+          - Sid: LecturaPublica
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub '${FrontBucket.Arn}/*'
+
+Outputs:
+  FrontBucketName:
+    Value: !Ref FrontBucket
+    Export: {Name: mh-edge-FrontBucketName}
+  SiteUrl:
+    Description: Origen del frontend; mh-api lo usa como origen CORS y base de la url compartida
+    Value: !GetAtt FrontBucket.WebsiteURL
+    Export: {Name: mh-edge-SiteUrl}

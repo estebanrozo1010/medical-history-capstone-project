@@ -1,0 +1,7 @@
+{
+  "/v1": {
+    "target": "https://a96z09c5qh.execute-api.us-east-1.amazonaws.com",
+    "secure": true,
+    "changeOrigin": true
+  }
+}

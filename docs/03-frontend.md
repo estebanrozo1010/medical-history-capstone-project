@@ -50,6 +50,13 @@ La config va en `assets/config.json` (generada en el despliegue desde los Output
 - Pantalla pública `/compartido/:token` (sin guard, sin interceptor de token): lista los archivos del link con su tamaño y un botón de descarga por archivo (cada uno abre `/api/s/{token}/files/{fileId}`), y muestra "enlace no disponible" ante un 410.
 
 ## Despliegue
+**PoC (Learner Lab, Tarea 16):** `node infra/publish-front.mjs` (sirve en PowerShell y en Git Bash, con las credenciales del lab en el entorno). Hace `ng build`, escribe en el `dist` un `config.json` con `apiUrl` = export `mh-api-ApiUrl` y sube al bucket del stack `mh-edge` (sitio estático de S3, `http://mh-front-<account>.s3-website-us-east-1.amazonaws.com`) en tres `aws s3 sync`: `.js`/`.css` (con hash) con `Cache-Control: public, max-age=31536000, immutable`; el resto (`index.html`, `config.json`, favicon) con `no-cache`; y al final `--delete`, para no borrar los chunks viejos antes de que el `index.html` nuevo esté arriba.
+
+En desarrollo `public/config.json` tiene `"apiUrl": "/v1"` y `ng serve` reenvía `/v1` a API Gateway con `proxy.conf.json`: el navegador ve un solo origen y no hay CORS, porque la API solo permite el origen del sitio. Las subidas (PUT firmado directo a S3) siguen permitidas desde `localhost:4200` por el CORS del bucket de documentos en `dev`.
+
+Rutas de la SPA en el sitio de S3: `ErrorDocument: index.html`, así que `/carpetas` o `/compartido/{token}` abren la app al recargar, pero con estado **404** (el navegador la muestra igual; solo lo notan `curl -I`, buscadores y vistas previas de links). Con CloudFront se reescribe a 200.
+
+**Objetivo (CloudFront):**
 ```bash
 cd frontend && npm ci && ng build --configuration production
 aws s3 sync dist/<app>/browser s3://mh-front-<account> --delete

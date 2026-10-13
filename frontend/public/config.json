@@ -1,5 +1,5 @@
 {
-  "apiUrl": "https://a96z09c5qh.execute-api.us-east-1.amazonaws.com/v1",
+  "apiUrl": "/v1",
   "userPoolId": "us-east-1_6eJ0IXTji",
   "clientId": "3do9chnvi5nvhmvs88ivttrbog",
   "region": "us-east-1"

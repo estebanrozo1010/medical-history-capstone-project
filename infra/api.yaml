@@ -5,11 +5,6 @@ Parameters:
   LabRoleArn:
     Type: String
     Description: Rol de las Lambdas y de los logs de API Gateway (LabRole en el Learner Lab)
-  AllowedOrigin:
-    Type: String
-    Default: 'http://localhost:4200'
-    # shortcut: un solo origen CORS; en la Tarea 16 pasa a ser la URL del sitio de S3
-    Description: Origen del frontend permitido por CORS
 Resources:
   # Access logs del stage: API Gateway necesita un rol de CloudWatch a nivel de cuenta
   ApiGatewayAccount:
@@ -35,8 +30,9 @@ Resources:
       # Limite global del stage (Lambda admite 10 ejecuciones simultaneas en el lab)
       MethodSettings:
         - {ResourcePath: '/*', HttpMethod: '*', ThrottlingRateLimit: 10, ThrottlingBurstLimit: 20}
+      # Un solo origen: el sitio de S3 (mh-edge). ng serve llega por su proxy (frontend/proxy.conf.json), sin CORS
       Cors:
-        AllowOrigin: !Sub "'${AllowedOrigin}'"
+        AllowOrigin: !Sub ["'${Origen}'", {Origen: !ImportValue mh-edge-SiteUrl}]
         AllowHeaders: "'Authorization,Content-Type'"
         AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
         MaxAge: "'600'"
@@ -51,11 +47,11 @@ Resources:
         DEFAULT_4XX:
           ResponseParameters:
             Headers:
-              Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+              Access-Control-Allow-Origin: !Sub ["'${Origen}'", {Origen: !ImportValue mh-edge-SiteUrl}]
         DEFAULT_5XX:
           ResponseParameters:
             Headers:
-              Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+              Access-Control-Allow-Origin: !Sub ["'${Origen}'", {Origen: !ImportValue mh-edge-SiteUrl}]
 
   ProfileLogs:
     Type: AWS::Logs::LogGroup
@@ -81,7 +77,7 @@ Resources:
         Variables:
           PROFILES_TABLE: mh-profiles
           KMS_KEY_ARN: !ImportValue mh-base-KeyArn
-          ALLOWED_ORIGIN: !Ref AllowedOrigin
+          ALLOWED_ORIGIN: !ImportValue mh-edge-SiteUrl
       Events:
         Crear: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /profile, Method: post}}
         Obtener: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /profile, Method: get}}
@@ -111,7 +107,7 @@ Resources:
           FILES_TABLE: mh-files
           DOCS_BUCKET: !ImportValue mh-base-DocsBucketName
           BACKUP_BUCKET: !ImportValue mh-base-BackupBucketName
-          ALLOWED_ORIGIN: !Ref AllowedOrigin
+          ALLOWED_ORIGIN: !ImportValue mh-edge-SiteUrl
       Events:
         Listar: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files, Method: get}}
         PedirSubida: {Type: Api, Properties: {RestApiId: !Ref Api, Path: /files/upload-url, Method: post}}
@@ -145,7 +141,7 @@ Resources:
           LINKS_TABLE: mh-links
           FILES_TABLE: mh-files
           # Base del frontend: la url compartida es {ALLOWED_ORIGIN}/compartido/{token}
-          ALLOWED_ORIGIN: !Ref AllowedOrigin
+          ALLOWED_ORIGIN: !ImportValue mh-edge-SiteUrl
           # Solo para firmar el GET de la descarga desde el link
           DOCS_BUCKET: !ImportValue mh-base-DocsBucketName
       Events:

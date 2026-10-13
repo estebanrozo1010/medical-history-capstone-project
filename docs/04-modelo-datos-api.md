@@ -97,9 +97,9 @@ Tipos permitidos: `application/pdf`, `image/jpeg`, `image/png`, `video/mp4`. Tam
 
 Todas las respuestas de `mh-links` llevan `Cache-Control: no-store` (un 410 se guarda en caché por defecto y el link se puede volver a encender; el 302 lleva una URL firmada). Las dos rutas públicas no llevan authorizer; el `GET` sin `Authorization` no necesita preflight de CORS.
 
-La URL que se comparte es la del frontend, `https://<dominio>/compartido/<token>` (pantalla pública de Angular). En la PoC `mh-links` la arma con su variable `ALLOWED_ORIGIN` (el mismo origen del CORS: `http://localhost:4200` en dev y la URL del sitio de S3 desde la Tarea 16). Esa pantalla llama a `{base}/s/{token}` (`/api/s/{token}` en la arquitectura objetivo) y cada botón navega a `{base}/s/{token}/files/{fileId}`; no hay redirección directa porque un link puede tener varios archivos.
+La URL que se comparte es la del frontend, `https://<dominio>/compartido/<token>` (pantalla pública de Angular). En la PoC `mh-links` la arma con su variable `ALLOWED_ORIGIN`, que es el mismo origen del CORS: la URL del sitio de S3, `http://mh-front-<account>.s3-website-us-east-1.amazonaws.com` (export `mh-edge-SiteUrl`, importado por `mh-api`). Un link creado desde `ng serve` también apunta al sitio publicado; en `/links` la URL se arma con `location.origin`. Esa pantalla llama a `{base}/s/{token}` (`/api/s/{token}` en la arquitectura objetivo) y cada botón navega a `{base}/s/{token}/files/{fileId}`; no hay redirección directa porque un link puede tener varios archivos.
 
 ## Reglas transversales
 - El `sub` siempre sale del JWT, nunca del body ni de la URL.
 - Límites de tasa: throttling de API Gateway por stage (global, no por usuario). El límite por IP en `/api/s/*` (p. ej. 100 peticiones / 5 min) es una regla `rate-based` del WAF de CloudFront.
-- CORS: solo el dominio del frontend (más `http://localhost:4200` en `dev`).
+- CORS: solo el dominio del frontend. En la PoC, API Gateway (preflight, `DEFAULT_4XX/5XX`) y los handlers responden `Access-Control-Allow-Origin` con un único origen, el del sitio de S3; `ng serve` no necesita CORS porque llega por su proxy (`/v1`). El bucket de documentos permite además `http://localhost:4200` en `dev` (PUT firmado directo).

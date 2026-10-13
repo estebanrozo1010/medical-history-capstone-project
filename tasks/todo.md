@@ -50,7 +50,7 @@ Detalle, criterios y verificación de cada tarea en [plan.md](plan.md).
 - [ ] 2 archivos en un link, abrir en ventana privada, apagar → 410, vencido → 410, revisión humana
 
 ## Fase 4: Borde, endurecimiento y entrega
-- [ ] Tarea 16: Publicación del frontend en S3 y borde (M)
+- [x] Tarea 16: Publicación del frontend en S3 y borde (M) — stack `mh-edge` (sitio estático de S3, `ErrorDocument` a `index.html`, solo `s3:GetObject` público) que exporta `mh-edge-SiteUrl`; `mh-api` lo importa como único origen CORS y base de la URL compartida (sin Java); `ng serve` sin CORS gracias al proxy `/v1`; `node infra/publish-front.mjs` (build, `config.json` con la URL real, sync con caché larga en `.js`/`.css` y `no-cache` en el resto, `--delete` al final). Verificado con `curl` (rutas SPA 404 con `index.html`, cabeceras CORS, buckets de documentos privados) y `ng test` (93). Falta el recorrido en el navegador del usuario
 - [ ] Tarea 17: Revisión de seguridad y correcciones (M)
   - [ ] Pendiente de la 10a: si se elimina un archivo mientras `mh-postscan` lo escanea (ventana < 1 s), el `cambiarEstado` condicional falla (registro ya borrado) y el objeto queda sin registro. Arreglo posible: si `cambiarEstado` devuelve false y el registro ya no existe, borrar todas las versiones (como `HUERFANO_BORRADO`)
 - [ ] Tarea 18: Pruebas de carga (S)
