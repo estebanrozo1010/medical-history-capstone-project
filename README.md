@@ -13,7 +13,12 @@ Este README y los docs `00` a `05` describen la arquitectura objetivo. Lo que ca
 
 ## 1. Arquitectura general
 
-Diagrama de la arquitectura objetivo en `diagramas/medical-historyv2.drawio` (abrir en [app.diagrams.net](https://app.diagrams.net)) y su vista de referencia en `diagramas/medical-historyv2.png`.
+Diagramas en `diagramas/` (abrir los `.drawio` en [app.diagrams.net](https://app.diagrams.net) o en draw.io Desktop):
+
+- **Arquitectura objetivo (TO-BE):** `medical-historyv2.drawio` y su vista `medical-historyv2.png`.
+- **PoC en el Learner Lab:** `medical-history-poc.drawio` y su vista `medical-history-poc.png`.
+
+Para regenerar un PNG: `& "$env:LOCALAPPDATA\Programs\draw.io\draw.io.exe" -x -f png -s 1.5 -o diagramas/medical-historyv2.png diagramas/medical-historyv2.drawio`.
 
 ### Componentes (versión objetivo)
 
@@ -78,7 +83,7 @@ El bucket de documentos replica automáticamente (S3 Replication, misma región)
 ### 2.6 Seguridad y auditoría
 - **WAF** delante de CloudFront y API Gateway.
 - **KMS** cifra en reposo S3 y DynamoDB.
-- **CloudTrail** audita actividad sobre API Gateway y el bucket de documentos; cada petición queda en los access logs del stage (sin tokens ni datos personales).
+- **CloudTrail** audita actividad sobre API Gateway y cada subida, lectura y borrado del bucket de documentos, en un bucket de logs aparte que es **WORM** (S3 Object Lock en modo Compliance): nadie puede borrar esos logs durante su retención. Cada petición a la API queda además en los access logs del stage (sin tokens ni datos personales).
 
 ### 2.7 Región: `eu-south-2` (Europe/Spain)
 - Elegida por el lugar de sustentación del proyecto (España).
@@ -97,7 +102,7 @@ El bucket de documentos replica automáticamente (S3 Replication, misma región)
 | API | `/api/*` en el mismo dominio vía CloudFront | URL directa de API Gateway (`https://...execute-api.../v1`) con CORS para el origen del sitio |
 | WAF y límite por IP | WAF de CloudFront y regional, regla `rate-based` en `/s/*` | Throttling del stage (10 req/s, ráfaga 20) |
 | Malware | GuardDuty Malware Protection | Validador de tipo (extensión, MIME, primeros bytes) |
-| CloudTrail | A S3 y CloudWatch Logs | Solo a S3 (SSE-S3) |
+| CloudTrail | A S3 WORM (Object Lock, Compliance, 365 días) y CloudWatch Logs | Solo a S3, con versionado y una política que niega a todos borrar logs (*tamper-evident*; el lab niega Object Lock) |
 | Carga | 200 req/s | 8 req/s medidos (máx. 10 Lambdas simultáneas) |
 | Cognito, DynamoDB, KMS, réplica a Glacier, SnapStart | Igual | Igual |
 
@@ -191,7 +196,7 @@ Pruebas de carga (opcional): pasos e informe en [tasks/carga-tarea-18.md](tasks/
 & "C:\Program Files\Git\bin\bash.exe" infra/teardown.sh
 ```
 
-**Irreversible.** Pide escribir `BORRAR` y se niega si la región no es `us-east-1`. Borra los stacks en orden inverso (`mh-api` → `mh-edge` → `mh-security` → `mh-auth` → `mh-base`), vaciando antes los buckets (todas las versiones y marcas de borrado, también el respaldo en GLACIER), y al final lista lo que queda. Sobrevive sin costo: la llave KMS en espera de borrado (30 días; no cobra mientras espera), la configuración de cuenta de API Gateway, el historial de stacks borrados y la alerta de Budgets. Glacier cobra el mínimo de 90 días de lo que se borre antes (centavos con los datos de prueba). Para volver a levantar todo: pasos 4.3 a 4.5. Detalle en [docs/07](docs/07-learner-lab.md).
+**Irreversible.** Pide escribir `BORRAR` y se niega si la región no es `us-east-1`. Para vaciar el bucket de CloudTrail primero quita su política (la que niega borrar logs); ese cambio queda en CloudTrail. Borra los stacks en orden inverso (`mh-api` → `mh-edge` → `mh-security` → `mh-auth` → `mh-base`), vaciando antes los buckets (todas las versiones y marcas de borrado, también el respaldo en GLACIER), y al final lista lo que queda. Sobrevive sin costo: la llave KMS en espera de borrado (30 días; no cobra mientras espera), la configuración de cuenta de API Gateway, el historial de stacks borrados y la alerta de Budgets. Glacier cobra el mínimo de 90 días de lo que se borre antes (centavos con los datos de prueba). Para volver a levantar todo: pasos 4.3 a 4.5. Detalle en [docs/07](docs/07-learner-lab.md).
 
 ### 4.8 Cómo se construyó con Claude Code
 
@@ -216,7 +221,7 @@ medical-history-capstone-project/
 ├── tests/load/   # k6 y scripts de datos de la prueba de carga
 ├── docs/         # especificación (00 a 07)
 ├── tasks/        # plan, lista de tareas e informes de pruebas
-├── diagramas/    # medical-historyv2.drawio y .png
+├── diagramas/    # TO-BE (medical-historyv2) y PoC (medical-history-poc), .drawio y .png
 └── README.md
 ```
 

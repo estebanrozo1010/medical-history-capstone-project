@@ -1,18 +1,26 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: mh-security - CloudTrail a un bucket S3 propio (docs/01, docs/07). Sin GuardDuty ni CloudWatch Logs (Learner Lab)
+Description: mh-security - CloudTrail a un bucket S3 propio que nadie puede borrar (docs/01, docs/07). Sin GuardDuty ni CloudWatch Logs (Learner Lab)
 Resources:
   # shortcut: SSE-S3 en vez de la CMK; usar la CMK exige una sentencia para cloudtrail.amazonaws.com en la key policy de mh-base (versión objetivo)
+  # shortcut: sin WORM real; el Learner Lab niega s3:PutBucketObjectLockConfiguration a voclabs y a LabRole (probado el 2026-10-16).
+  # La PoC es tamper-evident: versionado + política que niega borrar; quitar la política queda en CloudTrail.
+  # Versión objetivo: ObjectLockEnabled + DefaultRetention COMPLIANCE de 365 días (docs/01)
   TrailBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub 'mh-trail-${AWS::AccountId}'
+      VersioningConfiguration: {Status: Enabled}
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
       PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+      # El ciclo de vida lo ejecuta S3 y no lo frena la política: cada log se conserva 30 días y luego se elimina
       LifecycleConfiguration:
         Rules:
-          - {Id: limpieza, Status: Enabled, ExpirationInDays: 30}
+          - Id: limpieza
+            Status: Enabled
+            ExpirationInDays: 30
+            NoncurrentVersionExpiration: {NoncurrentDays: 1}
   TrailBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -26,6 +34,13 @@ Resources:
             Action: 's3:*'
             Resource: [!GetAtt TrailBucket.Arn, !Sub '${TrailBucket.Arn}/*']
             Condition: {Bool: {'aws:SecureTransport': 'false'}}
+          # Nadie (ni LabRole ni el usuario del lab) borra logs, desactiva el versionado ni acorta el ciclo de vida.
+          # Para cambiar esa configuración desde la plantilla hay que quitar antes esta sentencia
+          - Sid: NadieBorraLogs
+            Effect: Deny
+            Principal: '*'
+            Action: ['s3:DeleteObject', 's3:DeleteObjectVersion', 's3:PutLifecycleConfiguration', 's3:PutBucketVersioning']
+            Resource: [!GetAtt TrailBucket.Arn, !Sub '${TrailBucket.Arn}/*']
           # Solo este trail puede escribir (aws:SourceArn evita el "confused deputy")
           - Sid: CloudTrailAcl
             Effect: Allow

@@ -80,6 +80,8 @@ delete_stack mh-api
 delete_stack_with_buckets mh-edge "mh-front-$ACCOUNT"
 # Sin logging el trail deja de escribir en su bucket mientras se vacía
 aws cloudtrail stop-logging --name mh-trail 2>/dev/null || true
+# La política del bucket niega borrar logs a todos (tamper-evident): se quita antes de vaciarlo
+aws s3api delete-bucket-policy --bucket "mh-trail-$ACCOUNT" 2>/dev/null || true
 delete_stack_with_buckets mh-security "mh-trail-$ACCOUNT"
 delete_stack mh-auth
 # Primero el origen de la réplica, después el respaldo

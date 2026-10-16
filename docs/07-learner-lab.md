@@ -33,7 +33,7 @@ Solo `us-east-1` y `us-west-2`. Cargar la consola de un servicio en otra región
 | Amazon GuardDuty | Disponible, pero Malware Protection for S3 no es viable con `LabRole` (spike) |
 | AWS KMS | Puede asumir `LabRole` |
 | AWS Lambda | Máximo **10 ejecuciones simultáneas**. Asociar `LabRole` a cada función |
-| Amazon S3 | Puede asumir `LabRole` |
+| Amazon S3 | Puede asumir `LabRole`. **Object Lock denegado** (`s3:PutBucketObjectLockConfiguration`) al usuario y a `LabRole`, también vía CloudFormation (probado el 2026-10-16) |
 | S3 Glacier | No se puede crear un bloqueo de almacén (vault lock) |
 | AWS WAF | Disponible |
 | Amazon Route 53 | **No se pueden registrar dominios** |
@@ -76,7 +76,7 @@ Los docs [00](00-plan-general.md) a [05](05-seguridad-y-pruebas.md) y el README 
 | Escaneo de malware | GuardDuty Malware Protection (`CLEAN` / `INFECTED`) | Validador de tipo (extensión, MIME, primeros bytes): `CLEAN` / `REJECTED` | GuardDuty no es viable con `LabRole` |
 | Comparación de tamaño declarado/real | Verificación en `mh-postscan` | No hace falta: S3 rechaza el tamaño distinto (probado) | `Content-Length` firmado funciona |
 | Réplica a Glacier | S3 Replication | **Igual** (probada con `LabRole`) | — |
-| CloudTrail | A CloudWatch y S3 | Solo a S3 | El laboratorio no permite CloudWatch Logs en el trail |
+| CloudTrail | A CloudWatch y a un bucket S3 WORM (Object Lock Compliance, 365 días) | Solo a S3; bucket versionado con una política que niega borrar logs (*tamper-evident*, no WORM) | El laboratorio no permite CloudWatch Logs en el trail y niega Object Lock |
 | Carga | 200 req/s | 8 req/s fijos (p95 < 300 ms) y una ráfaga de 30 req/s que da 429, no 5xx | Máx. 10 ejecuciones simultáneas de Lambda |
 
 El escaneo va detrás de un puerto `ArchivoScanner` (hexagonal): el adaptador de la PoC es el validador de tipo y el de la versión objetivo es el de GuardDuty. Pasar de uno a otro no cambia el resto del backend.

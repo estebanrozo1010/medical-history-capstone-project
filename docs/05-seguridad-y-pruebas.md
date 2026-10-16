@@ -33,7 +33,7 @@ Las casillas se marcan en la Tarea 17 (pendiente). Los puntos de perímetro, rol
 - [ ] Regla `rate-based` por IP en el WAF de CloudFront para `/api/s/*`.
 - [ ] Headers de seguridad en CloudFront (HSTS, CSP con `connect-src` para Cognito y S3, nosniff, frame-ancestors).
 - [ ] CORS limitado al dominio propio (y `localhost:4200` solo en `dev`).
-- [ ] CloudTrail activo con eventos de datos del bucket de documentos.
+- [ ] CloudTrail activo con eventos de datos del bucket de documentos, en un bucket de logs WORM (Object Lock Compliance; en la PoC, versionado y política que niega borrar).
 - [ ] Access logs del stage de API Gateway en CloudWatch (CloudTrail no registra las peticiones a la API).
 
 **Dependencias**
