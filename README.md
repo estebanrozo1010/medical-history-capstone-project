@@ -18,7 +18,7 @@ Diagramas en `diagramas/` (abrir los `.drawio` en [app.diagrams.net](https://app
 - **Arquitectura objetivo (TO-BE):** `medical-historyv2.drawio` y su vista `medical-historyv2.png`.
 - **PoC en el Learner Lab:** `medical-history-poc.drawio` y su vista `medical-history-poc.png`.
 
-Para regenerar un PNG: `& "$env:LOCALAPPDATA\Programs\draw.io\draw.io.exe" -x -f png -s 1.5 -o diagramas/medical-historyv2.png diagramas/medical-historyv2.drawio`.
+Para regenerar un PNG: `& "$env:LOCALAPPDATA\Programs\draw.io\draw.io.exe" -x -f png -s 1.5 -o diagramas/medical-historyv2.png diagramas/medical-historyv2.drawio`, y lo mismo con `medical-history-poc.drawio` → `medical-history-poc.png`.
 
 ### Componentes (versión objetivo)
 
@@ -33,9 +33,9 @@ Para regenerar un PNG: `& "$env:LOCALAPPDATA\Programs\draw.io\draw.io.exe" -x -f
 | **Lambda — Registro/Perfil** | Alta de usuario y gestión de datos de perfil |
 | **Lambda — Gestión de Archivos** | Genera presigned URLs de subida/descarga hacia S3 |
 | **Lambda — Gestión de Links** | Crea, valida y controla el estado (TTL + switch manual) de los links compartidos |
-| **Lambda — Post-escaneo** | Reacciona a los findings de GuardDuty (cuarentena/eliminación de archivos infectados) |
+| **Lambda — Post-escaneo** | Reacciona a los resultados de GuardDuty (borra todas las versiones de los archivos infectados) |
 | **DynamoDB** | Perfiles de usuario, registros de archivos y links compartidos (con TTL nativo) |
-| **S3 (Documentos)** | Almacenamiento de los archivos médicos, organizados en carpetas por especialidad |
+| **S3 (Documentos)** | Almacenamiento de los archivos médicos (clave `{userSub}/{fileId}`; la carpeta por especialidad es un atributo en DynamoDB) |
 | **GuardDuty (Malware Protection for S3)** | Escaneo automático de malware en cada archivo subido |
 | **S3 Glacier** | Backup / recuperación ante desastre (réplica del bucket de documentos) |
 | **KMS** | Cifrado en reposo de S3 y DynamoDB, incluidos los datos sensibles del perfil |
@@ -55,7 +55,7 @@ Datos: correo, nombre, cédula/identificación, fecha de nacimiento, género.
 - El navegador **no** sube el archivo a través de API Gateway (límite de 10MB de payload y 29s de timeout).
 - El flujo real: Lambda genera una **presigned URL de S3**, el navegador sube el archivo directo a S3 con esa URL.
 - La URL firma `Content-Type`, `Content-Length` (S3 rechaza otro tamaño) e `If-None-Match: *` (no se puede reutilizar para reemplazar un archivo ya escaneado).
-- **Multipart upload** para archivos >100MB, obligatorio para >5GB (aplica a los videos). El backend está hecho; la UI en partes está pendiente (Tarea 11b).
+- **Multipart upload** para archivos > 100 MB (S3 lo exige por encima de 5 GB; el máximo de la PoC es 2 GB). El backend está hecho (Tarea 11a); la UI en partes está pendiente (Tarea 11b): hoy *Subir* manda cualquier archivo, hasta 2 GB, en un solo `PUT`.
 - Buenas prácticas aplicadas: expiración corta de la presigned URL (10 min), validación de tipo/tamaño antes de emitirla, registro de cada subida para auditoría.
 
 ### 2.3 Links de acceso temporal (expiración + switch manual)
@@ -64,7 +64,7 @@ El link que se comparte **no** es una presigned URL directa (esas no se pueden r
 - En DynamoDB se guarda: `token`, `activo` (true/false), `expiresAt` (atributo **TTL** nativo de Dynamo, y además validado en código), el permiso (ver y descargar, solo ver o solo descargar) y la lista de archivos (`fileIds`, hasta 50) que el link comparte.
 - En cada acceso, la Lambda valida: ¿activo? ¿no expiró? Si todo pasa, genera una presigned URL de muy corta duración (15 s) solo para esa consulta y redirige.
 - El **switch manual** (apagar el link desde la app) actualiza `activo=false` → corte inmediato.
-- El **TTL** cubre la expiración automática (15 min a 24 h) aunque el usuario no toque el switch.
+- El **TTL** cubre la expiración automática (de 15 min a 24 h en la UI; la API acepta de 1 a 1440 minutos) aunque el usuario no toque el switch.
 
 Ambos mecanismos son complementarios: uno cubre el olvido, el otro el control manual.
 
@@ -75,7 +75,7 @@ Se usa **GuardDuty Malware Protection for S3** en vez de una solución propia (e
 - Permite etiquetar/poner en cuarentena archivos infectados.
 - Pago solo por los datos escaneados.
 
-En la PoC GuardDuty no es viable con `LabRole`: el escaneo va detrás de un puerto `ArchivoScanner` y el adaptador activo valida extensión, tipo MIME y primeros bytes (`CLEAN` o `REJECTED`). Cambiar al adaptador de GuardDuty no toca el resto del backend.
+En la PoC GuardDuty no es viable con `LabRole`: el escaneo va detrás de un puerto `ArchivoScanner` y el adaptador activo compara los primeros bytes del objeto con la firma del tipo MIME declarado (`CLEAN` o `REJECTED`); el tipo ya se validó contra la lista permitida antes de firmar la subida. No detecta malware dentro de un archivo con formato válido. Cambiar al adaptador de GuardDuty no toca el resto del backend.
 
 ### 2.5 Backup / recuperación ante desastre
 El bucket de documentos replica automáticamente (S3 Replication, misma región) hacia un bucket con clase **S3 Glacier**. Es solo para recuperación de emergencia, no para acceso frecuente — por eso se acepta el tiempo de recuperación más lento de Glacier. Borrar un archivo borra todas sus versiones en ambos buckets.
@@ -86,7 +86,7 @@ El bucket de documentos replica automáticamente (S3 Replication, misma región)
 - **CloudTrail** audita actividad sobre API Gateway y cada subida, lectura y borrado del bucket de documentos, en un bucket de logs aparte que es **WORM** (S3 Object Lock en modo Compliance): nadie puede borrar esos logs durante su retención. Cada petición a la API queda además en los access logs del stage (sin tokens ni datos personales).
 
 ### 2.7 Región: `eu-south-2` (Europe/Spain)
-- Elegida por el lugar de sustentación del proyecto (España).
+- Elegida porque los datos de salud de usuarios europeos se quedan en la Unión Europea (RGPD), la latencia es menor en España y están los servicios que necesita la arquitectura (memoria, sección 3.5).
 - Nota técnica: el nombre comercial es "Europe (Spain)"; los datacenters físicos están en **Aragón**, no en la ciudad de Madrid. Madrid sí tiene puntos de presencia de **CloudFront** (edge locations), pero no es donde vive el cómputo/almacenamiento.
 - Servicios usados confirmados disponibles en esta región: GuardDuty (desde feb. 2023) y Cognito (desde abr. 2024). CloudFront, Route 53, WAF y KMS son servicios globales sin restricción regional.
 
@@ -101,16 +101,19 @@ El bucket de documentos replica automáticamente (S3 Replication, misma región)
 | Frontend | CloudFront + OAC + HTTPS + dominio (Route 53 + ACM) | Sitio estático de S3 público, solo HTTP (CloudFront denegado) |
 | API | `/api/*` en el mismo dominio vía CloudFront | URL directa de API Gateway (`https://...execute-api.../v1`) con CORS para el origen del sitio |
 | WAF y límite por IP | WAF de CloudFront y regional, regla `rate-based` en `/s/*` | Throttling del stage (10 req/s, ráfaga 20) |
-| Malware | GuardDuty Malware Protection | Validador de tipo (extensión, MIME, primeros bytes) |
+| Malware | GuardDuty Malware Protection | Validador de tipo (MIME declarado + primeros bytes) |
 | CloudTrail | A S3 WORM (Object Lock, Compliance, 365 días) y CloudWatch Logs | Solo a S3, con versionado y una política que niega a todos borrar logs (*tamper-evident*; el lab niega Object Lock) |
 | Carga | 200 req/s | 8 req/s medidos (máx. 10 Lambdas simultáneas) |
-| Cognito, DynamoDB, KMS, réplica a Glacier, SnapStart | Igual | Igual |
+| Cognito | User Pool con MFA TOTP en la interfaz | Mismo User Pool (MFA TOTP opcional en Cognito), pero la interfaz no implementa MFA |
+| DynamoDB, KMS, réplica a Glacier, SnapStart | Igual | Igual |
 
 Stacks de la PoC (en orden de despliegue): `mh-base` (KMS, buckets de documentos, respaldo y artefactos, tablas), `mh-auth` (Cognito), `mh-security` (CloudTrail), `mh-edge` (sitio del frontend) y `mh-api` (API Gateway y las 4 Lambdas). `mh-api` importa exports de `mh-base`, `mh-auth` y `mh-edge`.
 
+**Estado de la PoC:** desplegada y recorrida en el sitio de S3. Pendientes: UI de subida en partes (Tarea 11b), revisión de seguridad (Tarea 17, incluida la carrera eliminar-durante-escaneo), recorridos de los Checkpoints 3 y 4, y el borrado y redespliegue completos con `teardown.sh`. Detalle en [tasks/todo.md](tasks/todo.md).
+
 ## 4. Instalación de la PoC paso a paso
 
-Todo se hace desde **PowerShell** en Windows; los dos scripts `.sh` corren con el Bash de Git for Windows. En CloudShell o Linux los mismos pasos funcionan con `bash infra/...` y `export` en lugar de `$env:`.
+Todo se hace desde **PowerShell** en Windows; los dos scripts `.sh` corren con el Bash de Git for Windows. En Linux los mismos pasos funcionan con `bash infra/...` y `export` en lugar de `$env:`. En CloudShell `teardown.sh` corre tal cual; `deploy.sh` necesita instalar antes Java 21, Maven y cfn-lint.
 
 ### 4.1 Herramientas
 
@@ -147,7 +150,9 @@ cd frontend; npm ci; cd ..
 & "C:\Program Files\Git\bin\bash.exe" infra/deploy.sh
 ```
 
-`deploy.sh` corre `cfn-lint`, compila el jar de las Lambdas (`mvn package`), lo sube al bucket de artefactos y despliega en orden `mh-base` → `mh-auth` → `mh-security` → `mh-edge` → `mh-api`. Se puede volver a correr: sin cambios no hace nada.
+`deploy.sh` corre `cfn-lint`, compila el jar de las Lambdas (`mvn package`), lo sube al bucket de artefactos y despliega en orden `mh-base` → `mh-auth` → `mh-security` → `mh-edge` → `mh-api`. Se puede volver a correr: los stacks sin cambios no se tocan; si el jar cambia, `mh-api` publica versiones nuevas de las Lambdas y mueve el alias `live`.
+
+Si la API responde 500 tras más de 14 días sin uso, las versiones con SnapStart quedaron inactivas (pasó el 2026-10-31): la recuperación está en [docs/07](docs/07-learner-lab.md).
 
 ### 4.4 Publicar el frontend
 
@@ -173,7 +178,7 @@ Los usuarios viven en Cognito: se pierden al borrar los stacks.
 
 ```powershell
 cd frontend; npx ng serve          # http://localhost:4200, contra la API real
-npx ng test --watch=false          # pruebas del frontend (Vitest)
+npx ng test --watch=false          # en otra terminal (ng serve la ocupa): pruebas del frontend (Vitest)
 cd ..; mvn -f backend/pom.xml verify   # pruebas del backend (JUnit 5)
 ```
 
@@ -196,7 +201,7 @@ Pruebas de carga (opcional): pasos e informe en [tasks/carga-tarea-18.md](tasks/
 & "C:\Program Files\Git\bin\bash.exe" infra/teardown.sh
 ```
 
-**Irreversible.** Pide escribir `BORRAR` y se niega si la región no es `us-east-1`. Para vaciar el bucket de CloudTrail primero quita su política (la que niega borrar logs); ese cambio queda en CloudTrail. Borra los stacks en orden inverso (`mh-api` → `mh-edge` → `mh-security` → `mh-auth` → `mh-base`), vaciando antes los buckets (todas las versiones y marcas de borrado, también el respaldo en GLACIER), y al final lista lo que queda. Sobrevive sin costo: la llave KMS en espera de borrado (30 días; no cobra mientras espera), la configuración de cuenta de API Gateway, el historial de stacks borrados y la alerta de Budgets. Glacier cobra el mínimo de 90 días de lo que se borre antes (centavos con los datos de prueba). Para volver a levantar todo: pasos 4.3 a 4.5. Detalle en [docs/07](docs/07-learner-lab.md).
+**Irreversible.** Probado por partes; nunca se ha ejecutado entero (Tarea 19 del plan). Pide escribir `BORRAR` y se niega si la región no es `us-east-1`. Para vaciar el bucket de CloudTrail primero quita su política (la que niega borrar logs); ese cambio queda en CloudTrail. Borra los stacks en orden inverso (`mh-api` → `mh-edge` → `mh-security` → `mh-auth` → `mh-base`), vaciando antes los buckets (todas las versiones y marcas de borrado, también el respaldo en GLACIER), y al final lista lo que queda. Sobrevive sin costo: la llave KMS en espera de borrado (30 días; no cobra mientras espera), la configuración de cuenta de API Gateway, el historial de stacks borrados y la alerta de Budgets. Glacier cobra el mínimo de 90 días de lo que se borre antes (centavos con los datos de prueba). Para volver a levantar todo: pasos 4.3 a 4.5. Detalle en [docs/07](docs/07-learner-lab.md).
 
 ### 4.8 Cómo se construyó con Claude Code
 
@@ -238,4 +243,4 @@ Detalle en `docs/` y en [tasks/plan.md](tasks/plan.md):
 - [06 Skills para ejecutar el plan](docs/06-skills-de-ejecucion.md)
 - [07 Restricciones del AWS Academy Learner Lab](docs/07-learner-lab.md)
 
-Nota: el backend se implementa como Lambdas Java planas con SnapStart (sin Spring Boot) para evitar cold starts altos (1,2 a 1,5 s de punta a punta medidos con priming).
+Nota: el backend se implementa como Lambdas Java planas con SnapStart (sin Spring Boot) para evitar cold starts altos (1,2 a 1,5 s de punta a punta en `mh-profile`, medidos con priming en la Tarea 18).

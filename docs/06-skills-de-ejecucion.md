@@ -13,7 +13,7 @@ Qué skill de Claude Code usar en cada momento. Las fases son las de [00](00-pla
 | Antes de empezar | `/agent-skills:plan` | Convierte las 8 fases en tareas pequeñas con criterios de aceptación y orden de dependencias. Se usa una vez al inicio. |
 | Fases 2, 3 y 4 (backend) | `/agent-skills:test` | TDD: primero la prueba que falla, luego el código. Conviene en `ResolverLink`, `mh-postscan` y las reglas de autorización. |
 | Fase 5 (Angular) | `frontend-design:frontend-design` | Interfaz cuidada en lugar de una genérica. |
-| Antes de la fase 7 | `/agent-skills:review` y `/agent-skills:security-and-hardening` | Revisión del código y de la seguridad (con Opus 5.5). |
+| Antes de la fase 7 | `/agent-skills:review` y `/agent-skills:security-and-hardening` | Revisión del código y de la seguridad (con Opus 5.5). Es la Tarea 17, todavía pendiente. |
 | Al final | `/agent-skills:ship` | Lista de verificación previa al lanzamiento. Lanza en paralelo revisión de código, de seguridad y de pruebas; el resultado (go/no-go) quedó en la Tarea 19 del plan. |
 
 ## Cómo empezar

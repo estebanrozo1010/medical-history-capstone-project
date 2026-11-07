@@ -18,7 +18,7 @@ Solo `us-east-1` y `us-west-2`. Cargar la consola de un servicio en otra región
 - No se pueden crear usuarios ni grupos.
 - No se pueden crear roles, salvo roles vinculados a servicios. A veces se permite crear roles de servicio (puede fallar la primera vez y funcionar al reintentar), pero no hay que depender de ello.
 - Existe el rol **`LabRole`** (y el perfil de instancia `LabInstanceProfile`). Se asocia a los recursos que necesiten permisos: Lambdas, API Gateway, CloudFormation, S3, KMS, DynamoDB, EventBridge, etc. Tiene permisos similares a los del usuario de la consola.
-- Consecuencia para el proyecto: **una sola identidad para todo**. Las Lambdas, el rol de replicación de S3, el de GuardDuty y el de CloudTrail usan `LabRole`, pasado como parámetro `LabRoleArn` (`arn:aws:iam::<ACCOUNT_ID>:role/LabRole`) en los templates. No hay mínimo privilegio por Lambda; es un límite de la PoC.
+- Consecuencia para el proyecto: **una sola identidad para todo**. Las Lambdas, la réplica de S3 y el rol de CloudWatch de API Gateway (access logs) usan `LabRole`, pasado como parámetro `LabRoleArn` (`arn:aws:iam::<ACCOUNT_ID>:role/LabRole`) a `mh-base` y `mh-api`. CloudTrail no usa rol: escribe en su bucket por la política del bucket. GuardDuty no se despliega. No hay mínimo privilegio por Lambda; es un límite de la PoC.
 
 ## Servicios que aparecen en la lista del laboratorio (los que usamos)
 
@@ -32,7 +32,7 @@ Solo `us-east-1` y `us-west-2`. Cargar la consola de un servicio en otra región
 | Amazon EventBridge | Puede asumir `LabRole` |
 | Amazon GuardDuty | Disponible, pero Malware Protection for S3 no es viable con `LabRole` (spike) |
 | AWS KMS | Puede asumir `LabRole` |
-| AWS Lambda | Máximo **10 ejecuciones simultáneas**. Asociar `LabRole` a cada función |
+| AWS Lambda | Máximo **10 ejecuciones simultáneas**. Asociar `LabRole` a cada función. Con SnapStart, una versión sin invocar más de 14 días queda inactiva (ver abajo) |
 | Amazon S3 | Puede asumir `LabRole`. **Object Lock denegado** (`s3:PutBucketObjectLockConfiguration`) al usuario y a `LabRole`, también vía CloudFormation (probado el 2026-10-16) |
 | S3 Glacier | No se puede crear un bloqueo de almacén (vault lock) |
 | AWS WAF | Disponible |
@@ -81,9 +81,29 @@ Los docs [00](00-plan-general.md) a [05](05-seguridad-y-pruebas.md) y el README 
 
 El escaneo va detrás de un puerto `ArchivoScanner` (hexagonal): el adaptador de la PoC es el validador de tipo y el de la versión objetivo es el de GuardDuty. Pasar de uno a otro no cambia el resto del backend.
 
+## SnapStart: versiones inactivas tras 14 días
+
+Una versión publicada con SnapStart que pasa más de 14 días sin invocarse queda inactiva. La siguiente invocación intenta regenerar el snapshot; en el lab falló (`SnapStartRegenerationFailureException`, `AccessDenied`) y la API respondió 500 (2026-10-31).
+
+Comprobar: `aws lambda get-function-configuration --function-name mh-profile --qualifier live --query "[Version,State,StateReasonCode]"`.
+
+Arreglo aplicado (PowerShell, por cada función): cambiar la descripción para que haya algo que publicar, esperar, publicar una versión nueva y mover a ella el alias `live`.
+
+```powershell
+foreach ($f in 'mh-profile','mh-files','mh-links','mh-postscan') {
+  aws lambda update-function-configuration --function-name $f --description "republicada" | Out-Null
+  aws lambda wait function-updated --function-name $f
+  $v = aws lambda publish-version --function-name $f --query Version --output text
+  aws lambda wait published-version-active --function-name $f --qualifier $v
+  aws lambda update-alias --function-name $f --name live --function-version $v
+}
+```
+
+Se hace fuera de CloudFormation y deja *drift* en `mh-api`: desde el 2026-10-31 el alias `live` apunta a las versiones 15 (`mh-profile`), 12 (`mh-files`), 7 (`mh-links`) y 10 (`mh-postscan`), y la descripción cambió. No hace falta corregirlo: un `deploy.sh` con código nuevo publica otra versión y mueve el alias, y `teardown.sh` borra las funciones con todas sus versiones. Antes de una demo tras más de 14 días sin uso, comprobar el estado y repetir el arreglo si hace falta.
+
 ## Borrado de la PoC y lo que sobrevive
 
-`infra/teardown.sh` (Git Bash o CloudShell; pide escribir `BORRAR`, `--yes` lo salta) borra en orden inverso a `deploy.sh`: `mh-api` → `mh-edge` → `mh-security` → `mh-auth` → `mh-base`. Antes de cada stack con buckets los vacía por completo (partes multipart en curso, todas las versiones y marcas de borrado, de a 1 000), porque CloudFormation no borra un bucket con objetos; si algo escribió entre medio (CloudTrail, una subida tardía) vuelve a vaciar y reintenta una vez. Detiene el trail antes de vaciar su bucket y vacía `mh-docs` antes que `mh-docs-backup`. Al final lista stacks y buckets `mh-*` que sigan y la llave KMS. Revisar además *Resource Groups & Tag Editor* en `us-east-1`.
+`infra/teardown.sh` (Git Bash o CloudShell; pide escribir `BORRAR`, `--yes` lo salta; se niega si la región no es `us-east-1`) borra en orden inverso a `deploy.sh`: `mh-api` → `mh-edge` → `mh-security` → `mh-auth` → `mh-base`. Antes de cada stack con buckets los vacía por completo (partes multipart en curso, todas las versiones y marcas de borrado, de a 1 000), porque CloudFormation no borra un bucket con objetos; si algo escribió entre medio (CloudTrail, una subida tardía) vuelve a vaciar y reintenta una vez. Detiene el trail y quita la política de su bucket (la que niega borrar logs; el cambio queda en CloudTrail) antes de vaciarlo, y vacía `mh-docs` antes que `mh-docs-backup`. Al final lista stacks y buckets `mh-*` que sigan y la llave KMS. Revisar además *Resource Groups & Tag Editor* en `us-east-1`. Está probado por partes (bucket temporal, reintento simulado, guarda de región); nunca se ejecutó completo, y el paso que quita la política del bucket de CloudTrail (añadido el 2026-10-16) tampoco se probó.
 
 Ningún recurso tiene `DeletionPolicy: Retain`, DynamoDB y Cognito no tienen protección contra borrado, y los log groups están definidos en `mh-api` (se borran con él; si una Lambda alcanzó a recrear alguno, el script lo borra).
 

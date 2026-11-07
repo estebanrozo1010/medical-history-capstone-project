@@ -4,7 +4,7 @@ Nombres y rutas según [00](00-plan-general.md) y [04](04-modelo-datos-api.md).
 
 ## Checklist de seguridad (revisión final con Opus 5.5)
 
-Las casillas se marcan en la Tarea 17 (pendiente). Los puntos de perímetro, roles por Lambda y GuardDuty son de la versión objetivo; en la PoC se justifican con [07](07-learner-lab.md). Hallazgos del `/agent-skills:ship` (sin Critical ni High) en la Tarea 19 de [tasks/plan.md](../tasks/plan.md).
+Las casillas se marcan en la Tarea 17 (pendiente). Los puntos de perímetro, roles por Lambda y GuardDuty son de la versión objetivo; en la PoC se justifican con [07](07-learner-lab.md). Hallazgos del `/agent-skills:ship` (sin Critical ni High; un Medium: `logout` no revoca el refresh token) en la Tarea 19 de [tasks/plan.md](../tasks/plan.md).
 
 **Datos**
 - [ ] Todos los buckets: Block Public Access, SSE-KMS, TLS obligatorio, versionado en docs.
@@ -19,6 +19,8 @@ Las casillas se marcan en la Tarea 17 (pendiente). Los puntos de perímetro, rol
 - [ ] Cada Lambda con su propio rol; sin `Resource: "*"` evitable; sin `AdministratorAccess`.
 - [ ] Prueba de aislamiento: usuario A no accede a archivos/links de B (404).
 - [ ] La key policy de KMS delega en IAM y no concede `kms:*` a roles de aplicación.
+- [ ] Sesión: ID token en memoria (1 h), refresh token en `sessionStorage` (30 días) y `logout` que revoca el refresh token. En la PoC `logout` solo limpia el navegador (Medium del `/ship`).
+- [ ] MFA TOTP disponible en la interfaz (Cognito lo tiene opcional; la PoC no tiene pantallas de MFA).
 
 **Archivos y links**
 - [ ] Presigned de subida: ≤ 15 min, `Content-Type` y `Content-Length` firmados; `mh-postscan` compara el tamaño real con el declarado.
@@ -43,14 +45,14 @@ Las casillas se marcan en la Tarea 17 (pendiente). Los puntos de perímetro, rol
 ## Pruebas
 
 ### Backend
-- **Unitarias** (`domain`, `application`): JUnit 5 + Mockito con puertos falsos. Casos obligatorios: validación de perfil, reglas de subida (carpeta, tipo, tamaño), `ResolverLink` (activo / apagado / vencido / inexistente / archivos mezclados), propiedad de recursos.
+- **Unitarias** (`domain`, `application`): JUnit 5 con dobles de prueba escritos a mano para los puertos (sin Mockito). Casos obligatorios: validación de perfil, reglas de subida (carpeta, tipo, tamaño), `ResolverLink` (activo / apagado / vencido / inexistente / archivos mezclados), propiedad de recursos.
 - **Adaptadores**: Testcontainers + LocalStack (DynamoDB, S3, KMS) para repositorios y presigner. En la PoC no se usó: los adaptadores se probaron con el SDK simulado (S3 y `obtenerVarios` de DynamoDB) y con curl contra AWS; `KmsCifrador` y los repositorios de perfil y links no tienen tests propios.
 - **Handlers**: eventos de API Gateway de ejemplo contra el handler (`sam local invoke` opcional).
 - **Postscan**: eventos de GuardDuty simulados para `NO_THREATS_FOUND`, `THREATS_FOUND`, `FAILED`, tamaño distinto del declarado y reenvío duplicado. En la PoC: eventos `Object Created` simulados (firma correcta → `CLEAN`, otra → `REJECTED`, reenvío, clave ajena y objeto sin registro).
 
 ### Frontend
-- `ng test` (Vitest en la PoC, 93 tests): `AuthService`, interceptor (añade ID token, refresca ante 401), servicio de subida (partes y progreso; las partes quedan para la Tarea 11b), formularios.
-- E2E (Playwright, opcional en la PoC): flujo feliz completo contra el entorno `dev`.
+- `ng test` (Vitest en la PoC, 93 tests en 12 archivos, en verde): `AuthService` (ID token en memoria, refresh token en `sessionStorage`, renovación y logout), `authGuard`, interceptor (añade el ID token solo a `apiUrl`, renueva y reintenta una vez ante 401, cierra sesión si vuelve a dar 401), `FilesApi`, `LinksApi` y `ProfileApi`, subida (validación de tipo y tamaño, progreso y consulta del escaneo), carpetas, compartir, `/links`, pantalla pública y formulario de perfil. Sin tests de subida en partes (la UI es la Tarea 11b, pendiente) ni de las pantallas de login, registro y confirmar.
+- E2E (Playwright): no se hizo en la PoC; el flujo feliz se recorrió a mano en el sitio de S3 (Tarea 16).
 
 ### Infra
 - `cfn-lint` en cada template; despliegue y borrado completo en una cuenta de pruebas.

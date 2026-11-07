@@ -2,7 +2,7 @@
 
 Este documento es el **contrato** entre backend ([02](02-backend.md)), frontend ([03](03-frontend.md)) e infra ([01](01-infra-cloudformation.md)). Cualquier cambio se hace aquí primero.
 
-## Tablas DynamoDB (`PAY_PER_REQUEST`, SSE con CMK)
+## Tablas DynamoDB (`PAY_PER_REQUEST`, SSE con CMK, PITR activado)
 
 ### `mh-profiles`
 | Atributo | Tipo | Nota |
@@ -59,7 +59,7 @@ Base:
 - **Arquitectura objetivo:** `https://<dominio>/api` (CloudFront reenvía `/api/*` a API Gateway; ver [01](01-infra-cloudformation.md)).
 - **PoC en el Learner Lab (lo implementado):** sin CloudFront no hay prefijo `/api`. La base es la URL del stage, `https://<apiId>.execute-api.us-east-1.amazonaws.com/v1`, y las rutas cuelgan de la raíz: `GET {base}/profile`, `GET {base}/s/{token}`, etc. El front la lee de `apiUrl` en `config.json` (Export `mh-api-ApiUrl`). Ver [07](07-learner-lab.md).
 
-Las rutas de abajo son relativas a la base. Todos requieren `Authorization: Bearer <ID token de Cognito>` salvo los marcados *pública*. Error uniforme: `{ "code": "...", "message": "..." }`.
+Las rutas de abajo son relativas a la base. Todos requieren `Authorization: Bearer <ID token de Cognito>` salvo los marcados *pública*. Error uniforme: `{ "code": "...", "message": "..." }`. Excepción: los 401 del authorizer y los 429 del throttling los responde API Gateway con su propio cuerpo (`{"message": "..."}`); `GatewayResponses` solo les agrega `Access-Control-Allow-Origin`.
 
 ### Perfil (`mh-profile`)
 | Método y ruta | Body | Respuesta |
@@ -68,13 +68,13 @@ Las rutas de abajo son relativas a la base. Todos requieren `Authorization: Bear
 | `GET /profile` | — | `200 {email, nombre, cedula, fechaNacimiento, genero}` · `404` |
 | `PUT /profile` | igual que POST | `200` perfil · `404` si no existe |
 
-Validación (`400 VALIDACION`): `nombre` 1–100 caracteres; `cedula` de 5 a 15 dígitos; `fechaNacimiento` `AAAA-MM-DD`, desde 1900-01-01 y no futura; `genero` `M`/`F`/`O`. Campos extra del body (incluido `sub` o `email`) se ignoran. Códigos de error: `VALIDACION` (400), `NO_ENCONTRADO` (404), `CONFLICTO` (409), `ERROR_INTERNO` (500).
+Validación (`400 VALIDACION`): `nombre` 1–100 caracteres; `cedula` de 5 a 15 dígitos; `fechaNacimiento` `AAAA-MM-DD`, desde 1900-01-01 y no futura; `genero` `M`/`F`/`O`. Campos extra del body (incluido `sub` o `email`) se ignoran. Códigos de error (todas las Lambdas): `VALIDACION` (400), `NO_AUTORIZADO` (401), `NO_ENCONTRADO` (404), `METODO_NO_PERMITIDO` (405), `CONFLICTO` (409), `NO_DISPONIBLE` (410, solo links), `ERROR_INTERNO` (500).
 
 ### Archivos (`mh-files`)
 | Método y ruta | Body / query | Respuesta |
 |---|---|---|
-| `GET /files?carpeta=` | `carpeta` opcional (sin ella devuelve todos) | `200 [{fileId, carpeta, nombre, contentType, size, status, createdAt}]` |
-| `POST /files/upload-url` | `{carpeta, nombre, contentType, size}` | `201 {fileId, url, headers, expiresIn}` · `400` carpeta/tipo/tamaño inválido |
+| `GET /files?carpeta=` | `carpeta` opcional (sin ella devuelve todos) | `200 [{fileId, carpeta, nombre, contentType, size, status, createdAt}]` (del más nuevo al más viejo; `status` es el efectivo) · `400` si `carpeta` no es de la lista |
+| `POST /files/upload-url` | `{carpeta, nombre, contentType, size}` | `201 {fileId, url, headers, expiresIn}` · `400` carpeta/nombre/tipo/tamaño inválido |
 | `POST /files/multipart/start` | `{carpeta, nombre, contentType, size}` | `201 {fileId, uploadId, partSize}` (`partSize` = 16 MB) · `400` como `upload-url` |
 | `POST /files/multipart/part-url` | `{fileId, uploadId, partNumber}` | `200 {url}` (PUT de 10 min con el `Content-Length` de la parte firmado; S3 devuelve el `ETag`) · `400` si `partNumber` no está entre 1 y `ceil(size/partSize)` |
 | `POST /files/multipart/complete` | `{fileId, uploadId, parts:[{partNumber, etag}]}` | `200 {fileId}` · `400` si no vienen las `n` partes en orden o no coinciden con lo subido · `404` si el `uploadId` no es de ese archivo · `409` si el objeto ya existe |
@@ -82,9 +82,9 @@ Validación (`400 VALIDACION`): `nombre` 1–100 caracteres; `cedula` de 5 a 15 
 | `GET /files/{fileId}/download-url` | — | `200 {url, expiresIn: 300}` · `409` si no está `CLEAN` · `404` ajeno o inexistente |
 | `DELETE /files/{fileId}` | — | `204` en cualquier estado (si está `PENDING`, también aborta sus subidas en partes) (borra todas las versiones, ver [02](02-backend.md)) · `409` si la réplica al respaldo sigue en curso (reintentar) · `404` ajeno o inexistente |
 
-Los cuatro `multipart/*`: `404` si el `fileId` es ajeno o no existe; `409` si el registro ya no está `PENDING`.
+Los tres que reciben `fileId` (`part-url`, `complete`, `abort`): `404` si el `fileId` es ajeno o no existe; `409` si el registro ya no está `PENDING`.
 
-Tipos permitidos: `application/pdf`, `image/jpeg`, `image/png`, `video/mp4`. Tamaño máximo en la PoC: 2 GB (video). El nombre original se devuelve al descargar con `response-content-disposition`; no forma parte de la clave S3.
+Tipos permitidos: `application/pdf`, `image/jpeg`, `image/png`, `video/mp4`. Tamaño máximo en la PoC: 2 GB (video). `nombre`: 1–255 caracteres sin caracteres de control; `size`: entero de 1 byte a 2 GB. El nombre original se devuelve al descargar con `response-content-disposition`; no forma parte de la clave S3.
 
 ### Links (`mh-links`)
 | Método y ruta | Body | Respuesta |
